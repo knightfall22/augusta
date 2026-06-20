@@ -7,7 +7,7 @@ import (
 
 func main() {
 
-	se, _ := storage.NewMongoStore("augusta", "mongodb+srv://viktorhadrian066_db_user:348HStKudVJbgJC@augusta.n3qffzj.mongodb.net/?appName=Augusta")
+	se, _ := storage.NewMongoStore("augusta", "")
 	scheduler := augusta.NewScheduler(se)
 	schedulerServer := augusta.SchedulerServer{
 		Scheduler: scheduler,
