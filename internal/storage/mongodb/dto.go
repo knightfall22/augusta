@@ -52,3 +52,31 @@ func (t *tasks) fromDomain(task *domain.Task) {
 	t.NextRunAt = task.NextRunAt
 	t.LastRunAt = task.LastRunAt
 }
+
+type leaseModel struct {
+	ID          string    `bson:"_id"`
+	CandidateID string    `bson:"candidate_id"`
+	LastRenewed time.Time `bson:"last_renewed"`
+	LastAquired time.Time `bson:"last_aquired"`
+	ExpiresAt   time.Time `bson:"expires_at"`
+}
+
+func (l *leaseModel) toDomain() *domain.Lease {
+	if l == nil {
+		return nil
+	}
+	return &domain.Lease{
+		CandidateID: l.CandidateID,
+		LastRenewed: l.LastRenewed,
+		LastAquired: l.LastAquired,
+		ExpiresAt:   l.ExpiresAt,
+	}
+}
+
+func (l *leaseModel) fromDomain(lease *domain.Lease) {
+	l.ID = leaseID
+	l.CandidateID = lease.CandidateID
+	l.LastRenewed = lease.LastRenewed
+	l.LastAquired = lease.LastAquired
+	l.ExpiresAt = lease.ExpiresAt
+}

@@ -7,8 +7,11 @@ import (
 
 func main() {
 
-	se, _ := storage.NewMongoStore("augusta", "")
-	scheduler := augusta.NewScheduler(se)
+	se, _ := storage.NewMongoStore("augusta", "mongodb+srv://viktorhadrian066_db_user:348HStKudVJbgJC@augusta.n3qffzj.mongodb.net/?appName=Augusta")
+	scheduler := augusta.NewScheduler(augusta.SchedulerOptions{
+		StorageEngine: se,
+		LeaseStorage:  se,
+	})
 	schedulerServer := augusta.SchedulerServer{
 		Scheduler: scheduler,
 		Address:   "localhost:8080",

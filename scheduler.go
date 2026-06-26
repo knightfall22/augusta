@@ -4,28 +4,165 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/knightfall22/augusta/internal"
 	"github.com/knightfall22/augusta/internal/domain"
+	"github.com/sirupsen/logrus"
 	"github.com/sosodev/duration"
 )
 
-type Scheduler struct {
-	StorageEngine internal.StorageEngine
+type state int
+
+const (
+	Follower state = 0
+	Leader   state = 1
+	Dead     state = 2
+)
+
+func (s state) String() string {
+
+	switch s {
+	case Follower:
+		return "Follower"
+	case Leader:
+		return "Leader"
+	case Dead:
+		return "Dead"
+	default:
+		return "Unknown"
+	}
 }
 
-func NewScheduler(storage internal.StorageEngine) *Scheduler {
-	return &Scheduler{
-		StorageEngine: storage,
+// Scheduler represents a single, independent control plane node within the distributed cluster.
+// It is designed to be highly available and masterless, meaning any node can safely ingest
+// and persist new tasks into the storage engine.
+//
+// To prevent double-dispatching and database contention, the Scheduler utilizes a lease-based
+// leader election mechanism. While all nodes can accept inbound API requests, only the actively
+// elected Leader is permitted to run the polling loop that transitions tasks from pending to
+// assigned.
+//
+// If the current Leader crashes, experiences network partition, or fails to renew its lease
+// before the TTL expires, a Follower node will automatically promote itself and safely resume
+// the polling loop.
+//
+// The Scheduler is strictly agnostic regarding execution logic. It treats all task commands as
+// opaque payloads, focusing entirely on managing execution state, temporal routing (ISO 8601),
+// and exponential backoff, while leaving the payload interpretation entirely to the worker nodes.
+type Scheduler struct {
+	// ID is the unique identifier of the task. Uses UUID
+	ID    string
+	State state
+
+	StorageEngine internal.StorageEngine
+	Elector       *Elector
+
+	Logger *logrus.Entry
+
+	//todo: watch the context as development continues and gauge if it needed
+	ctx    context.Context
+	cancel context.CancelFunc
+	sync.RWMutex
+	watcher chan Watcher
+}
+
+type SchedulerOptions struct {
+	//Identifier of the scheduler. Is optional and default to UUID.
+	ID string
+
+	StorageEngine internal.StorageEngine
+
+	LeaseStorage internal.LeaseStorage
+
+	LeaseDuration int
+
+	//Logger to be used. Default to log.Default()
+	Logger *logrus.Logger
+}
+
+// NewScheduler creates a new Scheduler instance
+func NewScheduler(opts SchedulerOptions) *Scheduler {
+	if opts.ID == "" {
+		opts.ID = uuid.New().String()
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if opts.Logger == nil {
+		opts.Logger = logrus.New()
+		opts.Logger.SetFormatter(&logrus.JSONFormatter{})
+	}
+	logger := opts.Logger.WithContext(ctx).WithField("scheduler", opts.ID)
+
+	scheduler := &Scheduler{
+		ID:            opts.ID,
+		ctx:           ctx,
+		cancel:        cancel,
+		StorageEngine: opts.StorageEngine,
+		Logger:        logger,
+	}
+	elector := NewElector(opts.ID, opts.LeaseStorage, opts.LeaseDuration, logger)
+	scheduler.Elector = elector
+
+	return scheduler
+}
+
+func (s *Scheduler) Start() error {
+	s.startElector()
+	return nil
+}
+
+func (s *Scheduler) startElector() {
+	go s.stateTransition()
+	s.watcher = s.Elector.Run(s.ctx)
+
+}
+
+func (s *Scheduler) stateTransition() {
+
+	for {
+		s.Lock()
+		select {
+		case <-s.ctx.Done():
+			s.State = Dead
+			s.Unlock()
+			s.Logger.Info("Stopping scheduler")
+			return
+		case watch := <-s.watcher:
+			switch watch.Err {
+			case internal.ErrCannotAquireLock:
+				s.State = Follower
+			case nil:
+				s.State = Leader
+			default:
+				s.Logger.Errorf("error as occured %v", watch.Err)
+				s.Stop()
+				s.Unlock()
+				return
+			}
+			s.Unlock()
+		}
+
+	}
+}
+
+func (s *Scheduler) Stop() error {
+	s.cancel()
+	return nil
+}
+
+func (s *Scheduler) GetState() state {
+	s.RLock()
+	defer s.RUnlock()
+	return s.State
 }
 
 // AddTask adds a task to the storage engine.
 // All schedulers regardless of role are able to add tasks
 func (s *Scheduler) AddTask(ctx context.Context, addedTask *domain.AddTask) error {
-
 	epsilon := addedTask.Epsilon
 	if epsilon == "" {
 		epsilon = domain.DefaultEpsilon
@@ -59,4 +196,14 @@ func (s *Scheduler) AddTask(ctx context.Context, addedTask *domain.AddTask) erro
 		return err
 	}
 	return nil
+}
+
+// DeleteTask deletes a task from the storage engine
+func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
+	return s.StorageEngine.DeleteTask(ctx, taskID)
+}
+
+// GetTask gets a task from the storage engine
+func (s *Scheduler) GetTask(ctx context.Context, taskID string) (*domain.Task, error) {
+	return s.StorageEngine.GetTask(ctx, taskID)
 }

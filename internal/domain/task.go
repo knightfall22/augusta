@@ -11,18 +11,45 @@ const DefaultRetries = 3
 const DefaultEpsilon = "1m"
 
 type Task struct {
-	ID          string
-	Name        string
-	TaskType    string
-	Command     any
-	Disabled    bool
-	Retries     int
-	Epsilon     string
+	// ID is the unique identifier of the task. Uses UUID
+	ID string
+
+	// Name is the name of the task
+	Name string
+
+	// TaskType is the type of the task
+	TaskType string
+
+	// Command is the command to be executed. The scheduler is agnostic to the type of command.
+	// Command should work in conjuction with the task type. Its up to the worker to determine how to execute the command
+	Command any
+
+	// Disabled is a boolean indicating whether the task is disabled
+	Disabled bool
+
+	// Retries is the number of times the task should be retried
+	Retries int
+
+	// Epsilon is the time interval after which the task should be retried.
+	// Todo: Change to use ISO8601 interval format
+	Epsilon string
+
+	// LastSuccess is the time at which the task was last successful
 	LastSuccess time.Time
-	LastError   time.Time
-	Schedule    string
-	NextRunAt   time.Time
-	LastRunAt   time.Time
+
+	// LastError is the time at which the task was last failed
+	LastError time.Time
+
+	//Schedule is the time interval at which the task should be run. Use ISO8601 interval format.
+	// Example:
+	// "PT30M" for 30 minutes
+	Schedule string
+
+	//NextRunAt is the time at which the task should be run
+	NextRunAt time.Time
+
+	//LastRunAt is the time at which the task was last run
+	LastRunAt time.Time
 }
 
 type AddTask struct {

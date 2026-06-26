@@ -2,16 +2,60 @@ package augusta
 
 import (
 	"context"
-	"log"
+	"flag"
 	"testing"
 	"time"
 
 	"github.com/knightfall22/augusta/internal/domain"
-	storage "github.com/knightfall22/augusta/internal/storage/inmemory"
+	inMemoryStorage "github.com/knightfall22/augusta/internal/storage/inmemory"
 )
 
+var (
+	stoageEngine string
+	mongoURI     string
+)
+
+func init() {
+	flag.StringVar(&stoageEngine, "storage", "in-memory", "Used to set the storage engine used by the scheduler can be either in-memory or mongodb")
+	flag.StringVar(&mongoURI, "mongo", "mongodb://localhost:27017", "Used to set the mongo uri for the mongodb storage engine")
+
+}
+func TestLeaderLeaseElection(t *testing.T) {
+	h := NewTestHarness(t, 3, testHarnessOptions{StorageEngine: stoageEngine, MongoURI: mongoURI})
+
+	h.CheckLeader()
+
+	h.Stop()
+
+}
+
+func TestLeaderLeaseShutdownAndNewLeader(t *testing.T) {
+	h := NewTestHarness(t, 3, testHarnessOptions{StorageEngine: stoageEngine, MongoURI: mongoURI})
+
+	leaderID := h.CheckLeader()
+
+	h.StopScheduler(leaderID)
+
+	if h.Report(leaderID) != Dead {
+		t.Fatalf("Previous Leader not dead")
+	}
+
+	sleepMs(100)
+	newLeaderID := h.CheckLeader()
+
+	if newLeaderID == leaderID {
+		t.Fatalf("Leader not changed")
+	}
+
+	h.Stop()
+
+}
+
 func TestAddTaskToScheduler(t *testing.T) {
-	scheduler := NewScheduler(storage.NewInMemStorage())
+	scheduler := NewScheduler(SchedulerOptions{
+		StorageEngine: inMemoryStorage.NewInMemStorage(),
+		LeaseStorage:  inMemoryStorage.NewInMemStorage(),
+	})
 
 	tests := []struct {
 		name string
@@ -32,9 +76,9 @@ func TestAddTaskToScheduler(t *testing.T) {
 				Name:     "test2",
 				TaskType: "test",
 				Command:  "test",
-				Schedule: "PT2M",
+				Schedule: "PT30M",
 			},
-			want: time.Now().UTC().Add(2 * time.Minute),
+			want: time.Now().UTC().Add(30 * time.Minute),
 		},
 	}
 
@@ -50,9 +94,6 @@ func TestAddTaskToScheduler(t *testing.T) {
 					t.Fatalf("Failed to get task from scheduler %v", err)
 				}
 
-				log.Println("HHHH", task.NextRunAt)
-				log.Printf("%+v", task)
-
 				if task.NextRunAt.Minute() != tt.want.Minute() &&
 					task.NextRunAt.Hour() != tt.want.Hour() {
 					t.Errorf("NextRunAt = %v, want %v", task.NextRunAt, tt.want)
@@ -61,4 +102,10 @@ func TestAddTaskToScheduler(t *testing.T) {
 		})
 	}
 
+	scheduler.StorageEngine.Flush()
 }
+
+// func TestDeleteTaskFromScheduler(t *testing.T) {
+// 	scheduler := NewScheduler(storage.NewInMemStorage())
+
+// }
