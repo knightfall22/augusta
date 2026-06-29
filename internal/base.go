@@ -2,14 +2,47 @@ package internal
 
 import (
 	"context"
+	"log"
+	"math/rand/v2"
+	"time"
 
 	"github.com/knightfall22/augusta/internal/domain"
+	"github.com/sosodev/duration"
 )
+
+const DefaultRetries = 3
+
+const DefaultEpsilon = "PT10S"
+
+var DefaultWorkerLeaseDuration = time.Duration(60 * time.Second)
+
+func CalculateExponientialBackoff(epsilon string, attempts int) time.Time {
+	ep, err := duration.Parse(epsilon)
+	if err != nil {
+		ep, _ = duration.Parse(DefaultEpsilon)
+	}
+	epsilonDuration := int(ep.ToTimeDuration().Seconds())
+
+	delay := epsilonDuration * (2 << attempts)
+	max := 600
+
+	capped := min(delay, max)
+
+	jitter := time.Duration(capped/2+rand.IntN(capped/2)) * time.Second
+
+	log.Println("CAPPED:", capped)
+
+	return time.Now().UTC().Add(time.Duration(capped) * time.Second).Add(jitter)
+
+}
 
 type StorageEngine interface {
 	AddTask(ctx context.Context, task *domain.Task) error
 	GetTask(ctx context.Context, taskID string) (*domain.Task, error)
 	DeleteTask(ctx context.Context, taskID string) error
+
+	GetPendingTasks(ctx context.Context) ([]*domain.Task, error)
+	GetLeaseExpiredTasks(ctx context.Context) error
 
 	//Used only for testing
 	GetTaskByName(ctx context.Context, taskName string) (*domain.Task, error)

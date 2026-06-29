@@ -7,8 +7,14 @@ import (
 	"github.com/sosodev/duration"
 )
 
-const DefaultRetries = 3
-const DefaultEpsilon = "1m"
+type Status string
+
+const (
+	Pending Status = "pending"
+	Queued  Status = "queued"
+	Failed  Status = "failed"
+	Success Status = "success"
+)
 
 type Task struct {
 	// ID is the unique identifier of the task. Uses UUID
@@ -30,8 +36,10 @@ type Task struct {
 	// Retries is the number of times the task should be retried
 	Retries int
 
+	// CurrentRetries is the number of times the task has been retried in a session
+	CurrentRetries int
+
 	// Epsilon is the time interval after which the task should be retried.
-	// Todo: Change to use ISO8601 interval format
 	Epsilon string
 
 	// LastSuccess is the time at which the task was last successful
@@ -50,6 +58,8 @@ type Task struct {
 
 	//LastRunAt is the time at which the task was last run
 	LastRunAt time.Time
+
+	Status Status
 }
 
 type AddTask struct {

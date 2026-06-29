@@ -80,6 +80,20 @@ func (i *InMemStorage) GetLease(ctx context.Context) (*domain.Lease, error) {
 	return i.lease, nil
 }
 
+func (i *InMemStorage) GetPendingTasks(ctx context.Context) ([]*domain.Task, error) {
+	i.Lock()
+	defer i.Unlock()
+
+	return nil, nil
+}
+
+func (i *InMemStorage) GetLeaseExpiredTasks(ctx context.Context) error {
+	i.Lock()
+	defer i.Unlock()
+
+	return nil
+}
+
 func (i *InMemStorage) DeleteLease(ctx context.Context, candidateID string) error {
 	i.Lock()
 	defer i.Unlock()

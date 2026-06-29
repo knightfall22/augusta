@@ -61,6 +61,7 @@ func NewMongoStore(DBName, uri string) (*MongoStore, error) {
 func (m *MongoStore) AddTask(ctx context.Context, task *domain.Task) error {
 	taskDto := tasks{}
 	taskDto.fromDomain(task)
+	taskDto.Status = domain.Pending
 
 	_, err := m.tasks.InsertOne(ctx, taskDto)
 	return err
@@ -86,6 +87,103 @@ func (m *MongoStore) GetTask(ctx context.Context, taskID string) (*domain.Task, 
 
 func (m *MongoStore) GetTaskByName(ctx context.Context, taskName string) (*domain.Task, error) {
 	return nil, nil
+}
+
+func (m *MongoStore) GetPendingTasks(ctx context.Context) ([]*domain.Task, error) {
+	var result []*domain.Task
+
+	filter := bson.M{
+		"disabled": false,
+		"status":   "pending",
+		"$or": []bson.M{
+			{"next_run_at": bson.M{"$lt": time.Now().UTC().Add(10 * time.Second)}},
+			{"next_run_at": bson.M{"$gt": time.Now().UTC().Add(10 * time.Second)}},
+		},
+	}
+
+	cursor, err := m.tasks.Find(ctx, filter, options.Find().SetLimit(100))
+	if err != nil {
+		return nil, err
+	}
+
+	var ids []string
+	for cursor.Next(ctx) {
+		var task tasks
+		err := cursor.Decode(&task)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, task.toDomain())
+		ids = append(ids, task.ID)
+	}
+
+	if len(ids) > 0 {
+		filter = bson.M{"_id": bson.M{"$in": ids}}
+		set := bson.M{
+			"$set": bson.M{
+				"status":             "queued",
+				"visibility_timeout": time.Now().UTC().Add(internal.DefaultWorkerLeaseDuration),
+			},
+		}
+
+		if _, err := m.tasks.UpdateMany(ctx, filter, set); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+func (m *MongoStore) GetLeaseExpiredTasks(ctx context.Context) error {
+	filter := bson.M{
+		"disabled":           false,
+		"status":             "queued",
+		"visibility_timeout": bson.M{"$lt": time.Now().UTC()},
+	}
+
+	cursor, err := m.tasks.Find(ctx, filter, options.Find().SetLimit(100))
+	if err != nil {
+		return err
+	}
+
+	for cursor.Next(ctx) {
+		var task tasks
+		err := cursor.Decode(&task)
+		if err != nil {
+			return err
+		}
+
+		if task.CurrentRetries >= task.Retries {
+			if _, err := m.tasks.UpdateByID(ctx, task.ID, bson.M{
+				"$set": bson.M{
+					"disabled":           true,
+					"last_error":         time.Now().UTC(),
+					"visibility_timeout": time.Time{},
+					"status":             "failed",
+				},
+			}); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		next_run_at := internal.CalculateExponientialBackoff(task.Epsilon, task.CurrentRetries)
+
+		if _, err := m.tasks.UpdateByID(ctx, task.ID, bson.M{
+			"$set": bson.M{
+				"status":             "pending",
+				"visibility_timeout": time.Time{},
+				"current_retries":    task.CurrentRetries + 1,
+				"last_run_at":        time.Now().UTC(),
+				"next_run_at":        next_run_at,
+			},
+		}); err != nil {
+			return err
+		}
+
+	}
+
+	return nil
 }
 
 func (m *MongoStore) AquireLease(ctx context.Context, lease *domain.Lease) error {

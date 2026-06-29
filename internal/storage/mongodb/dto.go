@@ -7,34 +7,39 @@ import (
 )
 
 type tasks struct {
-	ID          string    `bson:"_id"`
-	Name        string    `bson:"name"`
-	TaskType    string    `bson:"task_type"`
-	Command     any       `bson:"command"`
-	Disabled    bool      `bson:"disabled"`
-	Retries     int       `bson:"retries"`
-	Epsilon     string    `bson:"epsilon"`
-	LastSuccess time.Time `bson:"last_success"`
-	LastError   time.Time `bson:"last_error"`
-	Schedule    string    `bson:"schedule"`
-	NextRunAt   time.Time `bson:"next_run_at"`
-	LastRunAt   time.Time `bson:"last_run_at"`
+	ID                string        `bson:"_id"`
+	Name              string        `bson:"name"`
+	TaskType          string        `bson:"task_type"`
+	Command           any           `bson:"command"`
+	Disabled          bool          `bson:"disabled"`
+	CurrentRetries    int           `bson:"current_retries"`
+	Retries           int           `bson:"retries"`
+	Epsilon           string        `bson:"epsilon"`
+	LastSuccess       time.Time     `bson:"last_success"`
+	LastError         time.Time     `bson:"last_error"`
+	Schedule          string        `bson:"schedule"`
+	VisibilityTimeout time.Time     `bson:"visibility_timeout"`
+	Status            domain.Status `bson:"status"`
+	NextRunAt         time.Time     `bson:"next_run_at"`
+	LastRunAt         time.Time     `bson:"last_run_at"`
 }
 
 func (t *tasks) toDomain() *domain.Task {
 	return &domain.Task{
-		ID:          t.ID,
-		Name:        t.Name,
-		TaskType:    t.TaskType,
-		Command:     t.Command,
-		Disabled:    t.Disabled,
-		Retries:     t.Retries,
-		Epsilon:     t.Epsilon,
-		LastSuccess: t.LastSuccess,
-		LastError:   t.LastError,
-		Schedule:    t.Schedule,
-		NextRunAt:   t.NextRunAt,
-		LastRunAt:   t.LastRunAt,
+		ID:             t.ID,
+		Name:           t.Name,
+		TaskType:       t.TaskType,
+		Command:        t.Command,
+		Disabled:       t.Disabled,
+		Retries:        t.Retries,
+		CurrentRetries: t.CurrentRetries,
+		Epsilon:        t.Epsilon,
+		LastSuccess:    t.LastSuccess,
+		LastError:      t.LastError,
+		Schedule:       t.Schedule,
+		NextRunAt:      t.NextRunAt,
+		LastRunAt:      t.LastRunAt,
+		Status:         t.Status,
 	}
 }
 
@@ -45,12 +50,14 @@ func (t *tasks) fromDomain(task *domain.Task) {
 	t.Command = task.Command
 	t.Disabled = task.Disabled
 	t.Retries = task.Retries
+	t.CurrentRetries = task.CurrentRetries
 	t.Epsilon = task.Epsilon
 	t.LastSuccess = task.LastSuccess
 	t.LastError = task.LastError
 	t.Schedule = task.Schedule
 	t.NextRunAt = task.NextRunAt
 	t.LastRunAt = task.LastRunAt
+	t.Status = task.Status
 }
 
 type leaseModel struct {

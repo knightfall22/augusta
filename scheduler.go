@@ -59,6 +59,7 @@ type Scheduler struct {
 
 	StorageEngine internal.StorageEngine
 	Elector       *Elector
+	Dispatcher    *Dispatcher
 
 	Logger *logrus.Entry
 
@@ -79,6 +80,8 @@ type SchedulerOptions struct {
 
 	LeaseDuration int
 
+	DispatcherTimeout int
+
 	//Logger to be used. Default to log.Default()
 	Logger *logrus.Logger
 }
@@ -97,12 +100,17 @@ func NewScheduler(opts SchedulerOptions) *Scheduler {
 	}
 	logger := opts.Logger.WithContext(ctx).WithField("scheduler", opts.ID)
 
+	if opts.DispatcherTimeout == 0 {
+		opts.DispatcherTimeout = 5
+	}
+
 	scheduler := &Scheduler{
 		ID:            opts.ID,
 		ctx:           ctx,
 		cancel:        cancel,
 		StorageEngine: opts.StorageEngine,
 		Logger:        logger,
+		Dispatcher:    NewDispatcher(opts.StorageEngine, opts.DispatcherTimeout, logger),
 	}
 	elector := NewElector(opts.ID, opts.LeaseStorage, opts.LeaseDuration, logger)
 	scheduler.Elector = elector
@@ -134,8 +142,16 @@ func (s *Scheduler) stateTransition() {
 		case watch := <-s.watcher:
 			switch watch.Err {
 			case internal.ErrCannotAquireLock:
+				if s.State == Leader {
+					s.Logger.Info("Leader lost")
+					s.Dispatcher.Stop()
+				}
 				s.State = Follower
 			case nil:
+				if s.State != Leader {
+					s.Logger.Info("Leader Acquired")
+					s.Dispatcher.Run(s.ctx)
+				}
 				s.State = Leader
 			default:
 				s.Logger.Errorf("error as occured %v", watch.Err)
@@ -165,12 +181,12 @@ func (s *Scheduler) GetState() state {
 func (s *Scheduler) AddTask(ctx context.Context, addedTask *domain.AddTask) error {
 	epsilon := addedTask.Epsilon
 	if epsilon == "" {
-		epsilon = domain.DefaultEpsilon
+		epsilon = internal.DefaultEpsilon
 	}
 
 	retries := addedTask.Retries
 	if retries == 0 {
-		retries = domain.DefaultRetries
+		retries = internal.DefaultRetries
 	}
 
 	if addedTask.Schedule == "" {
