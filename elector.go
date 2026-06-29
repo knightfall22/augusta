@@ -3,6 +3,7 @@ package augusta
 import (
 	"context"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	"github.com/knightfall22/augusta/internal"
@@ -39,9 +40,11 @@ type Elector struct {
 	leaseRenewalTimeout time.Duration
 
 	Logger *logrus.Entry
+
+	wg *sync.WaitGroup
 }
 
-func NewElector(candidateID string, leaseStorage internal.LeaseStorage, leaseDuration int, log *logrus.Entry) *Elector {
+func NewElector(candidateID string, leaseStorage internal.LeaseStorage, leaseDuration int, log *logrus.Entry, wg *sync.WaitGroup) *Elector {
 
 	if leaseDuration == 0 {
 		leaseDuration = defaultLeaseDuration
@@ -61,13 +64,14 @@ func NewElector(candidateID string, leaseStorage internal.LeaseStorage, leaseDur
 		LeaseDuration:       time.Duration(leaseDuration) * time.Second,
 		leaseRenewalTimeout: leaseRenewalTimeout,
 		Logger:              log.WithField("elector", candidateID),
+		wg:                  wg,
 	}
 }
 
 func (e *Elector) Run(ctx context.Context) chan Watcher {
 	watcher := make(chan Watcher)
 
-	go func() {
+	e.wg.Go(func() {
 		defer close(watcher)
 		for {
 			select {
@@ -83,7 +87,8 @@ func (e *Elector) Run(ctx context.Context) chan Watcher {
 				watcher <- Watcher{State: sig, Err: err}
 			}
 		}
-	}()
+
+	})
 
 	return watcher
 }

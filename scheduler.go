@@ -3,7 +3,9 @@ package augusta
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/rand/v2"
+	"net"
 	"sync"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/knightfall22/augusta/internal/domain"
 	"github.com/sirupsen/logrus"
 	"github.com/sosodev/duration"
+	"google.golang.org/grpc"
 )
 
 type state int
@@ -63,11 +66,16 @@ type Scheduler struct {
 
 	Logger *logrus.Entry
 
+	grpcPort   int
+	grpcServer *grpc.Server
+	listener   net.Listener
+
 	//todo: watch the context as development continues and gauge if it needed
 	ctx    context.Context
 	cancel context.CancelFunc
 	sync.RWMutex
 	watcher chan Watcher
+	wg      sync.WaitGroup
 }
 
 type SchedulerOptions struct {
@@ -81,6 +89,8 @@ type SchedulerOptions struct {
 	LeaseDuration int
 
 	DispatcherTimeout int
+
+	GRPCPort int
 
 	//Logger to be used. Default to log.Default()
 	Logger *logrus.Logger
@@ -104,33 +114,65 @@ func NewScheduler(opts SchedulerOptions) *Scheduler {
 		opts.DispatcherTimeout = 5
 	}
 
+	if opts.GRPCPort == 0 {
+		//Use high level port for grpc
+		opts.GRPCPort = 50051
+	}
+
 	scheduler := &Scheduler{
 		ID:            opts.ID,
 		ctx:           ctx,
 		cancel:        cancel,
 		StorageEngine: opts.StorageEngine,
 		Logger:        logger,
-		Dispatcher:    NewDispatcher(opts.StorageEngine, opts.DispatcherTimeout, logger),
+		grpcPort:      opts.GRPCPort,
 	}
-	elector := NewElector(opts.ID, opts.LeaseStorage, opts.LeaseDuration, logger)
+
+	dispatch := NewDispatcher(opts.StorageEngine, opts.DispatcherTimeout, logger, &scheduler.wg)
+	scheduler.Dispatcher = dispatch
+
+	elector := NewElector(opts.ID, opts.LeaseStorage, opts.LeaseDuration, logger, &scheduler.wg)
 	scheduler.Elector = elector
+
+	scheduler.grpcServer = grpc.NewServer()
 
 	return scheduler
 }
 
 func (s *Scheduler) Start() error {
+	var err error
+	s.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", 0))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	s.Logger.Infof("Starting gRPC server on port %+v", s.listener.Addr())
+
+	s.wg.Go(func() {
+		if err := s.grpcServer.Serve(s.listener); err != nil {
+			select {
+			case <-s.ctx.Done():
+				s.Logger.Info("Context Cancelled Stopping gRPC server")
+				return
+			default:
+				s.Logger.Errorf("server error: %+v", err)
+				return
+			}
+		}
+	})
 	s.startElector()
 	return nil
 }
 
 func (s *Scheduler) startElector() {
-	go s.stateTransition()
+	s.wg.Go(func() {
+		s.stateTransition()
+	})
 	s.watcher = s.Elector.Run(s.ctx)
 
 }
 
 func (s *Scheduler) stateTransition() {
-
 	for {
 		s.Lock()
 		select {
@@ -167,6 +209,8 @@ func (s *Scheduler) stateTransition() {
 
 func (s *Scheduler) Stop() error {
 	s.cancel()
+	s.listener.Close()
+	s.wg.Wait()
 	return nil
 }
 

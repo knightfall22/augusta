@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"log"
 	"math/rand/v2"
 	"time"
 
@@ -29,8 +28,6 @@ func CalculateExponientialBackoff(epsilon string, attempts int) time.Time {
 	capped := min(delay, max)
 
 	jitter := time.Duration(capped/2+rand.IntN(capped/2)) * time.Second
-
-	log.Println("CAPPED:", capped)
 
 	return time.Now().UTC().Add(time.Duration(capped) * time.Second).Add(jitter)
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/knightfall22/augusta/internal/domain"
 	inMemoryStorage "github.com/knightfall22/augusta/internal/storage/inmemory"
 )
@@ -21,6 +22,8 @@ func init() {
 
 }
 func TestLeaderLeaseElection(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
 	h := NewTestHarness(t, 3, testHarnessOptions{StorageEngine: stoageEngine, MongoURI: mongoURI})
 
 	h.CheckLeader()
@@ -30,6 +33,8 @@ func TestLeaderLeaseElection(t *testing.T) {
 }
 
 func TestLeaderLeaseShutdownAndNewLeader(t *testing.T) {
+	// defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
 	h := NewTestHarness(t, 3, testHarnessOptions{StorageEngine: stoageEngine, MongoURI: mongoURI})
 
 	leaderID := h.CheckLeader()
@@ -52,6 +57,8 @@ func TestLeaderLeaseShutdownAndNewLeader(t *testing.T) {
 }
 
 func TestAddTaskToScheduler(t *testing.T) {
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+
 	scheduler := NewScheduler(SchedulerOptions{
 		StorageEngine: inMemoryStorage.NewInMemStorage(),
 		LeaseStorage:  inMemoryStorage.NewInMemStorage(),
