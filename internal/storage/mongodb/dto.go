@@ -10,7 +10,7 @@ type tasks struct {
 	ID                string        `bson:"_id"`
 	Name              string        `bson:"name"`
 	TaskType          string        `bson:"task_type"`
-	Command           any           `bson:"command"`
+	Command           []byte        `bson:"command"`
 	Disabled          bool          `bson:"disabled"`
 	CurrentRetries    int           `bson:"current_retries"`
 	Retries           int           `bson:"retries"`

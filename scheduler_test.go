@@ -33,7 +33,7 @@ func TestLeaderLeaseElection(t *testing.T) {
 }
 
 func TestLeaderLeaseShutdownAndNewLeader(t *testing.T) {
-	// defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
+	defer leaktest.CheckTimeout(t, 100*time.Millisecond)()
 
 	h := NewTestHarness(t, 3, testHarnessOptions{StorageEngine: stoageEngine, MongoURI: mongoURI})
 
@@ -74,7 +74,7 @@ func TestAddTaskToScheduler(t *testing.T) {
 			task: &domain.AddTask{
 				Name:     "test",
 				TaskType: "test",
-				Command:  "test",
+				// Command:  "test",
 			},
 		},
 		{
@@ -82,7 +82,7 @@ func TestAddTaskToScheduler(t *testing.T) {
 			task: &domain.AddTask{
 				Name:     "test2",
 				TaskType: "test",
-				Command:  "test",
+				// Command:  "test",
 				Schedule: "PT30M",
 			},
 			want: time.Now().UTC().Add(30 * time.Minute),

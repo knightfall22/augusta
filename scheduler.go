@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/knightfall22/augusta/internal"
+	pb "github.com/knightfall22/augusta/internal/api/v1"
 	"github.com/knightfall22/augusta/internal/domain"
 	"github.com/sirupsen/logrus"
 	"github.com/sosodev/duration"
@@ -135,13 +136,14 @@ func NewScheduler(opts SchedulerOptions) *Scheduler {
 	scheduler.Elector = elector
 
 	scheduler.grpcServer = grpc.NewServer()
+	pb.RegisterSchedulerServiceServer(scheduler.grpcServer, dispatch)
 
 	return scheduler
 }
 
 func (s *Scheduler) Start() error {
 	var err error
-	s.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", 0))
+	s.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", s.grpcPort))
 	if err != nil {
 		log.Fatal(err)
 	}

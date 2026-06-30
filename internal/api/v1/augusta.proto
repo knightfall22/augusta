@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package augusta.v1;
+
+option go_package = "https://github.com/knightfall22/augusta"; 
+
+service SchedulerService {
+    // A single, long-lived bidirectional stream.
+    rpc ConnectSession(stream ClientMessage) returns (stream ServerMessage) {};
+}
+
+message Task {
+    string id = 1;  
+    string name = 2;
+    string task_type = 3;
+    bytes command = 4;
+    bool disabled = 5;
+    int32 retries = 6;
+    int32 current_retries = 7;
+    string epsilon = 8;
+    int64 last_success = 9;
+    int64 last_error = 10;
+    string schedule = 11;
+    string status = 12;
+    int64 next_run_at = 13;
+    int64 last_run_at = 14;
+};
+
+message RegisterWorker {
+    string worker_id = 1;
+    repeated string supported_tags = 2;
+    //Todo: add more info about the worker
+};
+
+message TaskBatch {
+    repeated Task tasks = 1;
+};
+
+message TaskHeartbeat {
+    string worker_id = 1;
+    repeated string active_task_ids = 2;
+};
+
+enum Status {
+    OK = 0;
+    ERROR = 1;
+}
+message TaskResult {
+   string task_id = 1;
+   Status status = 2;
+   string error_message = 3;
+};
+
+message ClientMessage {
+    oneof payload{
+        RegisterWorker register = 1;
+        TaskHeartbeat heartbeat = 2;
+        TaskResult result = 3;
+    }
+};
+
+message RegisterAck {
+    
+};
+
+message ServerMessage {
+    oneof payload{
+        RegisterAck ack = 1;
+        TaskBatch tasks = 2;
+    }
+}

@@ -1,9 +1,11 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
+	pb "github.com/knightfall22/augusta/internal/api/v1"
 	"github.com/sosodev/duration"
 )
 
@@ -28,7 +30,7 @@ type Task struct {
 
 	// Command is the command to be executed. The scheduler is agnostic to the type of command.
 	// Command should work in conjuction with the task type. Its up to the worker to determine how to execute the command
-	Command any
+	Command []byte
 
 	// Disabled is a boolean indicating whether the task is disabled
 	Disabled bool
@@ -63,12 +65,12 @@ type Task struct {
 }
 
 type AddTask struct {
-	Name     string `json:"name"`
-	TaskType string `json:"task_type"`
-	Command  any    `json:"command"`
-	Disabled bool   `json:"disabled"`
-	Retries  int    `json:"retries"`
-	Epsilon  string `json:"epsilon"`
+	Name     string          `json:"name"`
+	TaskType string          `json:"task_type"`
+	Command  json.RawMessage `json:"command"`
+	Disabled bool            `json:"disabled"`
+	Retries  int             `json:"retries"`
+	Epsilon  string          `json:"epsilon"`
 
 	Schedule string `json:"schedule"`
 
@@ -99,4 +101,31 @@ func (t *AddTask) Validate() error {
 		}
 	}
 	return nil
+}
+
+func SerializeTasksToProtobuf(tasks []*Task) []*pb.Task {
+	pbTasks := make([]*pb.Task, len(tasks))
+	for i, task := range tasks {
+		pbTasks[i] = SerializeToProtobuf(task)
+	}
+	return pbTasks
+}
+
+func SerializeToProtobuf(task *Task) *pb.Task {
+	return &pb.Task{
+		Id:             task.ID,
+		Name:           task.Name,
+		TaskType:       task.TaskType,
+		Command:        task.Command,
+		Disabled:       task.Disabled,
+		Retries:        int32(task.Retries),
+		CurrentRetries: int32(task.CurrentRetries),
+		Epsilon:        task.Epsilon,
+		LastSuccess:    task.LastSuccess.Unix(),
+		LastError:      task.LastError.Unix(),
+		Schedule:       task.Schedule,
+		Status:         string(task.Status),
+		NextRunAt:      task.NextRunAt.Unix(),
+		LastRunAt:      task.LastRunAt.Unix(),
+	}
 }

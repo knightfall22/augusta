@@ -13,6 +13,7 @@ func main() {
 		LeaseStorage:      se,
 		LeaseDuration:     10,
 		DispatcherTimeout: 5,
+		GRPCPort:          50051,
 	})
 
 	scheduler.Start()

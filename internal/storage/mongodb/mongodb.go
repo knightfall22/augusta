@@ -43,6 +43,11 @@ func NewMongoStore(DBName, uri string) (*MongoStore, error) {
 				bson.E{Key: "next_run_at", Value: 1},
 			},
 		},
+		{
+			Keys: bson.D{
+				bson.E{Key: "visibility_timeout", Value: 1},
+			},
+		},
 	}
 
 	_, err = db.Collection("tasks").Indexes().CreateMany(ctx, indexTasksModel)
@@ -174,6 +179,7 @@ func (m *MongoStore) GetLeaseExpiredTasks(ctx context.Context) error {
 				"status":             "pending",
 				"visibility_timeout": time.Time{},
 				"current_retries":    task.CurrentRetries + 1,
+				"last_error":         time.Now().UTC(),
 				"last_run_at":        time.Now().UTC(),
 				"next_run_at":        next_run_at,
 			},

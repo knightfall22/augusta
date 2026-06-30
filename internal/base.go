@@ -60,3 +60,5 @@ type LeaseStorage interface {
 	DeleteLease(ctx context.Context, candidateID string) error
 	Flush() error
 }
+
+// type WokerSessionStore interface {}
