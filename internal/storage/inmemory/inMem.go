@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/knightfall22/augusta/internal"
+	pb "github.com/knightfall22/augusta/internal/api/v1"
 	"github.com/knightfall22/augusta/internal/domain"
 )
 
@@ -99,6 +100,20 @@ func (i *InMemStorage) DeleteLease(ctx context.Context, candidateID string) erro
 	defer i.Unlock()
 
 	i.lease = nil
+	return nil
+}
+
+func (i *InMemStorage) ExtendTaskLease(ctx context.Context, taskID []string) error {
+	i.Lock()
+	defer i.Unlock()
+
+	return nil
+}
+
+func (i *InMemStorage) ProcessTaskResult(ctx context.Context, result *pb.TaskResult) error {
+	i.Lock()
+	defer i.Unlock()
+
 	return nil
 }
 

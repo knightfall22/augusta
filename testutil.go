@@ -53,6 +53,7 @@ func NewTestHarness(t *testing.T, n int, opt testHarnessOptions) *TestHarness {
 			LeaseStorage:  le,
 			LeaseDuration: 10,
 			Logger:        logger,
+			GRPCPort:      50051 + id + 1,
 		})
 	}
 
@@ -99,13 +100,13 @@ func (th *TestHarness) StopScheduler(id string) {
 	}
 }
 
-func (th *TestHarness) Report(id string) state {
+func (th *TestHarness) Report(id string) (state, string) {
 	for _, s := range th.scheduler {
 		if s.ID == id {
-			return s.GetState()
+			return s.GetState(), s.listener.Addr().String()
 		}
 	}
-	return 0
+	return 0, ""
 }
 
 func (th *TestHarness) Stop() {

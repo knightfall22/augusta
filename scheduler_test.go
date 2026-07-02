@@ -41,7 +41,7 @@ func TestLeaderLeaseShutdownAndNewLeader(t *testing.T) {
 
 	h.StopScheduler(leaderID)
 
-	if h.Report(leaderID) != Dead {
+	if state, _ := h.Report(leaderID); state != Dead {
 		t.Fatalf("Previous Leader not dead")
 	}
 

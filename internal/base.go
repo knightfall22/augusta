@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"time"
 
+	pb "github.com/knightfall22/augusta/internal/api/v1"
 	"github.com/knightfall22/augusta/internal/domain"
 	"github.com/sosodev/duration"
 )
@@ -40,6 +41,9 @@ type StorageEngine interface {
 
 	GetPendingTasks(ctx context.Context) ([]*domain.Task, error)
 	GetLeaseExpiredTasks(ctx context.Context) error
+	ExtendTaskLease(ctx context.Context, taskID []string) error
+
+	ProcessTaskResult(ctx context.Context, result *pb.TaskResult) error
 
 	//Used only for testing
 	GetTaskByName(ctx context.Context, taskName string) (*domain.Task, error)

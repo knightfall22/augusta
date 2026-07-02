@@ -83,6 +83,7 @@ type Task struct {
 	Status         string                 `protobuf:"bytes,12,opt,name=status,proto3" json:"status,omitempty"`
 	NextRunAt      int64                  `protobuf:"varint,13,opt,name=next_run_at,json=nextRunAt,proto3" json:"next_run_at,omitempty"`
 	LastRunAt      int64                  `protobuf:"varint,14,opt,name=last_run_at,json=lastRunAt,proto3" json:"last_run_at,omitempty"`
+	Reoccurrence   int64                  `protobuf:"varint,15,opt,name=reoccurrence,proto3" json:"reoccurrence,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -211,6 +212,13 @@ func (x *Task) GetNextRunAt() int64 {
 func (x *Task) GetLastRunAt() int64 {
 	if x != nil {
 		return x.LastRunAt
+	}
+	return 0
+}
+
+func (x *Task) GetReoccurrence() int64 {
+	if x != nil {
+		return x.Reoccurrence
 	}
 	return 0
 }
@@ -423,13 +431,66 @@ func (x *TaskResult) GetErrorMessage() string {
 	return ""
 }
 
+type TaskResultBatch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*TaskResult          `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	WorkerId      string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskResultBatch) Reset() {
+	*x = TaskResultBatch{}
+	mi := &file_internal_api_v1_augusta_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskResultBatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskResultBatch) ProtoMessage() {}
+
+func (x *TaskResultBatch) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_api_v1_augusta_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskResultBatch.ProtoReflect.Descriptor instead.
+func (*TaskResultBatch) Descriptor() ([]byte, []int) {
+	return file_internal_api_v1_augusta_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TaskResultBatch) GetResults() []*TaskResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *TaskResultBatch) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
 type ClientMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*ClientMessage_Register
-	//	*ClientMessage_Heartbeat
-	//	*ClientMessage_Result
+	//	*ClientMessage_TaskHeartbeat
+	//	*ClientMessage_TaskResult
+	//	*ClientMessage_TaskResultBatch
 	Payload       isClientMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -437,7 +498,7 @@ type ClientMessage struct {
 
 func (x *ClientMessage) Reset() {
 	*x = ClientMessage{}
-	mi := &file_internal_api_v1_augusta_proto_msgTypes[5]
+	mi := &file_internal_api_v1_augusta_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -449,7 +510,7 @@ func (x *ClientMessage) String() string {
 func (*ClientMessage) ProtoMessage() {}
 
 func (x *ClientMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_api_v1_augusta_proto_msgTypes[5]
+	mi := &file_internal_api_v1_augusta_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -462,7 +523,7 @@ func (x *ClientMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientMessage.ProtoReflect.Descriptor instead.
 func (*ClientMessage) Descriptor() ([]byte, []int) {
-	return file_internal_api_v1_augusta_proto_rawDescGZIP(), []int{5}
+	return file_internal_api_v1_augusta_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ClientMessage) GetPayload() isClientMessage_Payload {
@@ -481,19 +542,28 @@ func (x *ClientMessage) GetRegister() *RegisterWorker {
 	return nil
 }
 
-func (x *ClientMessage) GetHeartbeat() *TaskHeartbeat {
+func (x *ClientMessage) GetTaskHeartbeat() *TaskHeartbeat {
 	if x != nil {
-		if x, ok := x.Payload.(*ClientMessage_Heartbeat); ok {
-			return x.Heartbeat
+		if x, ok := x.Payload.(*ClientMessage_TaskHeartbeat); ok {
+			return x.TaskHeartbeat
 		}
 	}
 	return nil
 }
 
-func (x *ClientMessage) GetResult() *TaskResult {
+func (x *ClientMessage) GetTaskResult() *TaskResult {
 	if x != nil {
-		if x, ok := x.Payload.(*ClientMessage_Result); ok {
-			return x.Result
+		if x, ok := x.Payload.(*ClientMessage_TaskResult); ok {
+			return x.TaskResult
+		}
+	}
+	return nil
+}
+
+func (x *ClientMessage) GetTaskResultBatch() *TaskResultBatch {
+	if x != nil {
+		if x, ok := x.Payload.(*ClientMessage_TaskResultBatch); ok {
+			return x.TaskResultBatch
 		}
 	}
 	return nil
@@ -507,19 +577,25 @@ type ClientMessage_Register struct {
 	Register *RegisterWorker `protobuf:"bytes,1,opt,name=register,proto3,oneof"`
 }
 
-type ClientMessage_Heartbeat struct {
-	Heartbeat *TaskHeartbeat `protobuf:"bytes,2,opt,name=heartbeat,proto3,oneof"`
+type ClientMessage_TaskHeartbeat struct {
+	TaskHeartbeat *TaskHeartbeat `protobuf:"bytes,2,opt,name=task_heartbeat,json=taskHeartbeat,proto3,oneof"`
 }
 
-type ClientMessage_Result struct {
-	Result *TaskResult `protobuf:"bytes,3,opt,name=result,proto3,oneof"`
+type ClientMessage_TaskResult struct {
+	TaskResult *TaskResult `protobuf:"bytes,3,opt,name=task_result,json=taskResult,proto3,oneof"`
+}
+
+type ClientMessage_TaskResultBatch struct {
+	TaskResultBatch *TaskResultBatch `protobuf:"bytes,4,opt,name=task_result_batch,json=taskResultBatch,proto3,oneof"`
 }
 
 func (*ClientMessage_Register) isClientMessage_Payload() {}
 
-func (*ClientMessage_Heartbeat) isClientMessage_Payload() {}
+func (*ClientMessage_TaskHeartbeat) isClientMessage_Payload() {}
 
-func (*ClientMessage_Result) isClientMessage_Payload() {}
+func (*ClientMessage_TaskResult) isClientMessage_Payload() {}
+
+func (*ClientMessage_TaskResultBatch) isClientMessage_Payload() {}
 
 type RegisterAck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -529,7 +605,7 @@ type RegisterAck struct {
 
 func (x *RegisterAck) Reset() {
 	*x = RegisterAck{}
-	mi := &file_internal_api_v1_augusta_proto_msgTypes[6]
+	mi := &file_internal_api_v1_augusta_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -541,7 +617,7 @@ func (x *RegisterAck) String() string {
 func (*RegisterAck) ProtoMessage() {}
 
 func (x *RegisterAck) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_api_v1_augusta_proto_msgTypes[6]
+	mi := &file_internal_api_v1_augusta_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -554,7 +630,7 @@ func (x *RegisterAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAck.ProtoReflect.Descriptor instead.
 func (*RegisterAck) Descriptor() ([]byte, []int) {
-	return file_internal_api_v1_augusta_proto_rawDescGZIP(), []int{6}
+	return file_internal_api_v1_augusta_proto_rawDescGZIP(), []int{7}
 }
 
 type ServerMessage struct {
@@ -570,7 +646,7 @@ type ServerMessage struct {
 
 func (x *ServerMessage) Reset() {
 	*x = ServerMessage{}
-	mi := &file_internal_api_v1_augusta_proto_msgTypes[7]
+	mi := &file_internal_api_v1_augusta_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -582,7 +658,7 @@ func (x *ServerMessage) String() string {
 func (*ServerMessage) ProtoMessage() {}
 
 func (x *ServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_api_v1_augusta_proto_msgTypes[7]
+	mi := &file_internal_api_v1_augusta_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -595,7 +671,7 @@ func (x *ServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerMessage.ProtoReflect.Descriptor instead.
 func (*ServerMessage) Descriptor() ([]byte, []int) {
-	return file_internal_api_v1_augusta_proto_rawDescGZIP(), []int{7}
+	return file_internal_api_v1_augusta_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ServerMessage) GetPayload() isServerMessage_Payload {
@@ -644,7 +720,7 @@ var File_internal_api_v1_augusta_proto protoreflect.FileDescriptor
 const file_internal_api_v1_augusta_proto_rawDesc = "" +
 	"\n" +
 	"\x1dinternal/api/v1/augusta.proto\x12\n" +
-	"augusta.v1\"\x90\x03\n" +
+	"augusta.v1\"\xb4\x03\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
@@ -661,7 +737,8 @@ const file_internal_api_v1_augusta_proto_rawDesc = "" +
 	"\bschedule\x18\v \x01(\tR\bschedule\x12\x16\n" +
 	"\x06status\x18\f \x01(\tR\x06status\x12\x1e\n" +
 	"\vnext_run_at\x18\r \x01(\x03R\tnextRunAt\x12\x1e\n" +
-	"\vlast_run_at\x18\x0e \x01(\x03R\tlastRunAt\"T\n" +
+	"\vlast_run_at\x18\x0e \x01(\x03R\tlastRunAt\x12\"\n" +
+	"\freoccurrence\x18\x0f \x01(\x03R\freoccurrence\"T\n" +
 	"\x0eRegisterWorker\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12%\n" +
 	"\x0esupported_tags\x18\x02 \x03(\tR\rsupportedTags\"3\n" +
@@ -674,11 +751,16 @@ const file_internal_api_v1_augusta_proto_rawDesc = "" +
 	"TaskResult\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12*\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x12.augusta.v1.StatusR\x06status\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\xc1\x01\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"`\n" +
+	"\x0fTaskResultBatch\x120\n" +
+	"\aresults\x18\x01 \x03(\v2\x16.augusta.v1.TaskResultR\aresults\x12\x1b\n" +
+	"\tworker_id\x18\x02 \x01(\tR\bworkerId\"\x9e\x02\n" +
 	"\rClientMessage\x128\n" +
-	"\bregister\x18\x01 \x01(\v2\x1a.augusta.v1.RegisterWorkerH\x00R\bregister\x129\n" +
-	"\theartbeat\x18\x02 \x01(\v2\x19.augusta.v1.TaskHeartbeatH\x00R\theartbeat\x120\n" +
-	"\x06result\x18\x03 \x01(\v2\x16.augusta.v1.TaskResultH\x00R\x06resultB\t\n" +
+	"\bregister\x18\x01 \x01(\v2\x1a.augusta.v1.RegisterWorkerH\x00R\bregister\x12B\n" +
+	"\x0etask_heartbeat\x18\x02 \x01(\v2\x19.augusta.v1.TaskHeartbeatH\x00R\rtaskHeartbeat\x129\n" +
+	"\vtask_result\x18\x03 \x01(\v2\x16.augusta.v1.TaskResultH\x00R\n" +
+	"taskResult\x12I\n" +
+	"\x11task_result_batch\x18\x04 \x01(\v2\x1b.augusta.v1.TaskResultBatchH\x00R\x0ftaskResultBatchB\t\n" +
 	"\apayload\"\r\n" +
 	"\vRegisterAck\"v\n" +
 	"\rServerMessage\x12+\n" +
@@ -704,33 +786,36 @@ func file_internal_api_v1_augusta_proto_rawDescGZIP() []byte {
 }
 
 var file_internal_api_v1_augusta_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_internal_api_v1_augusta_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_internal_api_v1_augusta_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_internal_api_v1_augusta_proto_goTypes = []any{
-	(Status)(0),            // 0: augusta.v1.Status
-	(*Task)(nil),           // 1: augusta.v1.Task
-	(*RegisterWorker)(nil), // 2: augusta.v1.RegisterWorker
-	(*TaskBatch)(nil),      // 3: augusta.v1.TaskBatch
-	(*TaskHeartbeat)(nil),  // 4: augusta.v1.TaskHeartbeat
-	(*TaskResult)(nil),     // 5: augusta.v1.TaskResult
-	(*ClientMessage)(nil),  // 6: augusta.v1.ClientMessage
-	(*RegisterAck)(nil),    // 7: augusta.v1.RegisterAck
-	(*ServerMessage)(nil),  // 8: augusta.v1.ServerMessage
+	(Status)(0),             // 0: augusta.v1.Status
+	(*Task)(nil),            // 1: augusta.v1.Task
+	(*RegisterWorker)(nil),  // 2: augusta.v1.RegisterWorker
+	(*TaskBatch)(nil),       // 3: augusta.v1.TaskBatch
+	(*TaskHeartbeat)(nil),   // 4: augusta.v1.TaskHeartbeat
+	(*TaskResult)(nil),      // 5: augusta.v1.TaskResult
+	(*TaskResultBatch)(nil), // 6: augusta.v1.TaskResultBatch
+	(*ClientMessage)(nil),   // 7: augusta.v1.ClientMessage
+	(*RegisterAck)(nil),     // 8: augusta.v1.RegisterAck
+	(*ServerMessage)(nil),   // 9: augusta.v1.ServerMessage
 }
 var file_internal_api_v1_augusta_proto_depIdxs = []int32{
-	1, // 0: augusta.v1.TaskBatch.tasks:type_name -> augusta.v1.Task
-	0, // 1: augusta.v1.TaskResult.status:type_name -> augusta.v1.Status
-	2, // 2: augusta.v1.ClientMessage.register:type_name -> augusta.v1.RegisterWorker
-	4, // 3: augusta.v1.ClientMessage.heartbeat:type_name -> augusta.v1.TaskHeartbeat
-	5, // 4: augusta.v1.ClientMessage.result:type_name -> augusta.v1.TaskResult
-	7, // 5: augusta.v1.ServerMessage.ack:type_name -> augusta.v1.RegisterAck
-	3, // 6: augusta.v1.ServerMessage.tasks:type_name -> augusta.v1.TaskBatch
-	6, // 7: augusta.v1.SchedulerService.ConnectSession:input_type -> augusta.v1.ClientMessage
-	8, // 8: augusta.v1.SchedulerService.ConnectSession:output_type -> augusta.v1.ServerMessage
-	8, // [8:9] is the sub-list for method output_type
-	7, // [7:8] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	1,  // 0: augusta.v1.TaskBatch.tasks:type_name -> augusta.v1.Task
+	0,  // 1: augusta.v1.TaskResult.status:type_name -> augusta.v1.Status
+	5,  // 2: augusta.v1.TaskResultBatch.results:type_name -> augusta.v1.TaskResult
+	2,  // 3: augusta.v1.ClientMessage.register:type_name -> augusta.v1.RegisterWorker
+	4,  // 4: augusta.v1.ClientMessage.task_heartbeat:type_name -> augusta.v1.TaskHeartbeat
+	5,  // 5: augusta.v1.ClientMessage.task_result:type_name -> augusta.v1.TaskResult
+	6,  // 6: augusta.v1.ClientMessage.task_result_batch:type_name -> augusta.v1.TaskResultBatch
+	8,  // 7: augusta.v1.ServerMessage.ack:type_name -> augusta.v1.RegisterAck
+	3,  // 8: augusta.v1.ServerMessage.tasks:type_name -> augusta.v1.TaskBatch
+	7,  // 9: augusta.v1.SchedulerService.ConnectSession:input_type -> augusta.v1.ClientMessage
+	9,  // 10: augusta.v1.SchedulerService.ConnectSession:output_type -> augusta.v1.ServerMessage
+	10, // [10:11] is the sub-list for method output_type
+	9,  // [9:10] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_internal_api_v1_augusta_proto_init() }
@@ -738,12 +823,13 @@ func file_internal_api_v1_augusta_proto_init() {
 	if File_internal_api_v1_augusta_proto != nil {
 		return
 	}
-	file_internal_api_v1_augusta_proto_msgTypes[5].OneofWrappers = []any{
+	file_internal_api_v1_augusta_proto_msgTypes[6].OneofWrappers = []any{
 		(*ClientMessage_Register)(nil),
-		(*ClientMessage_Heartbeat)(nil),
-		(*ClientMessage_Result)(nil),
+		(*ClientMessage_TaskHeartbeat)(nil),
+		(*ClientMessage_TaskResult)(nil),
+		(*ClientMessage_TaskResultBatch)(nil),
 	}
-	file_internal_api_v1_augusta_proto_msgTypes[7].OneofWrappers = []any{
+	file_internal_api_v1_augusta_proto_msgTypes[8].OneofWrappers = []any{
 		(*ServerMessage_Ack)(nil),
 		(*ServerMessage_Tasks)(nil),
 	}
@@ -753,7 +839,7 @@ func file_internal_api_v1_augusta_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_api_v1_augusta_proto_rawDesc), len(file_internal_api_v1_augusta_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

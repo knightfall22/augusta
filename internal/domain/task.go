@@ -12,10 +12,11 @@ import (
 type Status string
 
 const (
-	Pending Status = "pending"
-	Queued  Status = "queued"
-	Failed  Status = "failed"
-	Success Status = "success"
+	Pending  Status = "pending"
+	Queued   Status = "queued"
+	Running  Status = "running"
+	Failed   Status = "failed"
+	Finished Status = "finished"
 )
 
 type Task struct {
@@ -49,6 +50,8 @@ type Task struct {
 
 	// LastError is the time at which the task was last failed
 	LastError time.Time
+
+	Reoccurrence int
 
 	//Schedule is the time interval at which the task should be run. Use ISO8601 interval format.
 	// Example:
@@ -120,6 +123,7 @@ func SerializeToProtobuf(task *Task) *pb.Task {
 		Disabled:       task.Disabled,
 		Retries:        int32(task.Retries),
 		CurrentRetries: int32(task.CurrentRetries),
+		Reoccurrence:   int64(task.Reoccurrence),
 		Epsilon:        task.Epsilon,
 		LastSuccess:    task.LastSuccess.Unix(),
 		LastError:      task.LastError.Unix(),
@@ -127,5 +131,25 @@ func SerializeToProtobuf(task *Task) *pb.Task {
 		Status:         string(task.Status),
 		NextRunAt:      task.NextRunAt.Unix(),
 		LastRunAt:      task.LastRunAt.Unix(),
+	}
+}
+
+func DeserializeFromProtobuf(task *pb.Task) *Task {
+	return &Task{
+		ID:             task.Id,
+		Name:           task.Name,
+		TaskType:       task.TaskType,
+		Command:        task.Command,
+		Disabled:       task.Disabled,
+		Retries:        int(task.Retries),
+		CurrentRetries: int(task.CurrentRetries),
+		Epsilon:        task.Epsilon,
+		LastSuccess:    time.Unix(task.LastSuccess, 0),
+		LastError:      time.Unix(task.LastError, 0),
+		Schedule:       task.Schedule,
+		Status:         Status(task.Status),
+		NextRunAt:      time.Unix(task.NextRunAt, 0),
+		LastRunAt:      time.Unix(task.LastRunAt, 0),
+		Reoccurrence:   int(task.Reoccurrence),
 	}
 }

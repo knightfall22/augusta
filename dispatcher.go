@@ -2,6 +2,7 @@ package augusta
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"sync"
@@ -20,6 +21,7 @@ type WorkerSession struct {
 	Stream        pb.SchedulerService_ConnectSessionServer
 	taskChannel   chan []*domain.Task
 	LastHeartbeat time.Time
+	started       bool
 }
 
 type WorkerSessionStore struct {
@@ -37,6 +39,22 @@ func (w *WorkerSessionStore) GetWorkerSession(workerID string) *WorkerSession {
 	w.RLock()
 	defer w.RUnlock()
 	return w.Workers[workerID]
+}
+
+func (w *WorkerSessionStore) GetUnstartedWorkerSession(workerID string) (*WorkerSession, error) {
+	w.RLock()
+	defer w.RUnlock()
+
+	if _, exists := w.Workers[workerID]; !exists {
+		return nil, fmt.Errorf("worker not found")
+	}
+
+	if !w.Workers[workerID].started {
+		w.Workers[workerID].started = true
+		return w.Workers[workerID], nil
+	}
+
+	return nil, fmt.Errorf("do not continue")
 }
 
 func (w *WorkerSessionStore) SetWorkerSession(workerID string, session *WorkerSession) error {
@@ -183,11 +201,12 @@ func (p *Dispatcher) dispatch(ctx context.Context, tasks []*domain.Task) {
 }
 
 func (p *Dispatcher) dispatchListener(workerID string) {
-	workerSession := p.WorkerStore.GetWorkerSession(workerID)
-	if workerSession == nil {
+	workerSession, err := p.WorkerStore.GetUnstartedWorkerSession(workerID)
+	if err != nil {
 		return
 	}
 
+	p.logger.Infof("beginning listener for sending tasks to worker: %s", workerID)
 	p.wg.Go(func() {
 		for {
 			select {
@@ -221,7 +240,6 @@ func (p *Dispatcher) Stop() {
 
 // Meet grpc interface
 func (p *Dispatcher) ConnectSession(stream pb.SchedulerService_ConnectSessionServer) error {
-	log.Printf("HHHHHHHHHH")
 	for {
 		message, err := stream.Recv()
 		if err == io.EOF {
@@ -232,9 +250,6 @@ func (p *Dispatcher) ConnectSession(stream pb.SchedulerService_ConnectSessionSer
 			return err
 		}
 
-		// if message.Payload == &pb.ClientMessage_Register{} {
-
-		// }
 		switch msg := message.Payload.(type) {
 		case *pb.ClientMessage_Register:
 			if err := p.registerWorker(msg, stream); err != nil {
@@ -243,18 +258,24 @@ func (p *Dispatcher) ConnectSession(stream pb.SchedulerService_ConnectSessionSer
 			if err := stream.Send(&pb.ServerMessage{
 				Payload: &pb.ServerMessage_Ack{},
 			}); err != nil {
+				p.logger.Errorf("failed to send ack: %v", err)
 				return err
 			}
 
-			//Todo: Prevent multiple dispatching
+			p.logger.Printf("registering worker[%v]", msg.Register.GetWorkerId())
 			p.dispatchListener(msg.Register.GetWorkerId())
-			log.Printf("[INFO] Registering worker[%v]\n", msg.Register.GetWorkerId())
-		case *pb.ClientMessage_Heartbeat:
-			if err := p.WorkerStore.UpdateWorkerSession(msg.Heartbeat.GetWorkerId()); err != nil {
+		case *pb.ClientMessage_TaskHeartbeat:
+			activeTasks := msg.TaskHeartbeat.GetActiveTaskIds()
+			p.Store.ExtendTaskLease(stream.Context(), activeTasks)
+		case *pb.ClientMessage_TaskResult:
+			err := p.Store.ProcessTaskResult(stream.Context(), msg.TaskResult)
+			if err != nil {
+				p.logger.Errorf("error processing tasks %v", err)
 				return err
 			}
-		case *pb.ClientMessage_Result:
-			log.Printf("[INFO] Result %+v\n", msg.Result)
+			log.Printf("[INFO] Result %+v\n", msg.TaskResult)
+		case *pb.ClientMessage_TaskResultBatch:
+			log.Printf("[INFO] Result Batch %+v\n", msg.TaskResultBatch)
 		}
 	}
 }

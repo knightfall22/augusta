@@ -42,7 +42,7 @@ func (s *SchedulerServer) Start() error {
 	}
 
 	logger := logrus.New()
-	logger.SetFormatter(&logrus.JSONFormatter{})
+	logger.SetFormatter(logrus.StandardLogger().Formatter)
 	s.logger = logger
 
 	go func() {

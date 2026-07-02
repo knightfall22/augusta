@@ -13,6 +13,7 @@ type tasks struct {
 	Command           []byte        `bson:"command"`
 	Disabled          bool          `bson:"disabled"`
 	CurrentRetries    int           `bson:"current_retries"`
+	Reoccurrence      int           `bson:"reoccurrence"`
 	Retries           int           `bson:"retries"`
 	Epsilon           string        `bson:"epsilon"`
 	LastSuccess       time.Time     `bson:"last_success"`
@@ -33,6 +34,7 @@ func (t *tasks) toDomain() *domain.Task {
 		Disabled:       t.Disabled,
 		Retries:        t.Retries,
 		CurrentRetries: t.CurrentRetries,
+		Reoccurrence:   t.Reoccurrence,
 		Epsilon:        t.Epsilon,
 		LastSuccess:    t.LastSuccess,
 		LastError:      t.LastError,
@@ -58,6 +60,7 @@ func (t *tasks) fromDomain(task *domain.Task) {
 	t.NextRunAt = task.NextRunAt
 	t.LastRunAt = task.LastRunAt
 	t.Status = task.Status
+	t.Reoccurrence = task.Reoccurrence
 }
 
 type leaseModel struct {

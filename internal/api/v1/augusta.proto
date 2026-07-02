@@ -24,6 +24,7 @@ message Task {
     string status = 12;
     int64 next_run_at = 13;
     int64 last_run_at = 14;
+    int64 reoccurrence = 15;
 };
 
 message RegisterWorker {
@@ -51,17 +52,21 @@ message TaskResult {
    string error_message = 3;
 };
 
+message TaskResultBatch {
+    repeated TaskResult results = 1;
+    string worker_id = 2;
+}
+
 message ClientMessage {
     oneof payload{
         RegisterWorker register = 1;
-        TaskHeartbeat heartbeat = 2;
-        TaskResult result = 3;
+        TaskHeartbeat task_heartbeat = 2;
+        TaskResult task_result = 3;
+        TaskResultBatch task_result_batch = 4;
     }
 };
 
-message RegisterAck {
-    
-};
+message RegisterAck {};
 
 message ServerMessage {
     oneof payload{

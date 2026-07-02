@@ -107,7 +107,7 @@ func NewScheduler(opts SchedulerOptions) *Scheduler {
 
 	if opts.Logger == nil {
 		opts.Logger = logrus.New()
-		opts.Logger.SetFormatter(&logrus.JSONFormatter{})
+		opts.Logger.SetFormatter(logrus.StandardLogger().Formatter)
 	}
 	logger := opts.Logger.WithContext(ctx).WithField("scheduler", opts.ID)
 
@@ -148,7 +148,7 @@ func (s *Scheduler) Start() error {
 		log.Fatal(err)
 	}
 
-	s.Logger.Infof("Starting gRPC server on port %+v", s.listener.Addr())
+	s.Logger.Infof("Starting gRPC server on port %s", s.listener.Addr().String())
 
 	s.wg.Go(func() {
 		if err := s.grpcServer.Serve(s.listener); err != nil {
@@ -243,15 +243,16 @@ func (s *Scheduler) AddTask(ctx context.Context, addedTask *domain.AddTask) erro
 	nextRun := time.Now().UTC().Add(nextRunDuration.ToTimeDuration())
 
 	task := &domain.Task{
-		ID:        uuid.New().String(),
-		Name:      addedTask.Name,
-		TaskType:  addedTask.TaskType,
-		Command:   addedTask.Command,
-		Disabled:  addedTask.Disabled,
-		Epsilon:   epsilon,
-		Retries:   retries,
-		Schedule:  addedTask.Schedule,
-		NextRunAt: nextRun,
+		ID:           uuid.New().String(),
+		Name:         addedTask.Name,
+		TaskType:     addedTask.TaskType,
+		Reoccurrence: addedTask.Reoccurrence,
+		Command:      addedTask.Command,
+		Disabled:     addedTask.Disabled,
+		Epsilon:      epsilon,
+		Retries:      retries,
+		Schedule:     addedTask.Schedule,
+		NextRunAt:    nextRun,
 	}
 
 	if err := s.StorageEngine.AddTask(ctx, task); err != nil {

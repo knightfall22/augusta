@@ -2,11 +2,14 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/knightfall22/augusta/internal"
+	pb "github.com/knightfall22/augusta/internal/api/v1"
 	"github.com/knightfall22/augusta/internal/domain"
+	"github.com/sosodev/duration"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -141,8 +144,11 @@ func (m *MongoStore) GetPendingTasks(ctx context.Context) ([]*domain.Task, error
 
 func (m *MongoStore) GetLeaseExpiredTasks(ctx context.Context) error {
 	filter := bson.M{
-		"disabled":           false,
-		"status":             "queued",
+		"disabled": false,
+		"$or": []bson.M{
+			{"status": "running"},
+			{"status": "queued"},
+		},
 		"visibility_timeout": bson.M{"$lt": time.Now().UTC()},
 	}
 
@@ -174,6 +180,7 @@ func (m *MongoStore) GetLeaseExpiredTasks(ctx context.Context) error {
 
 		next_run_at := internal.CalculateExponientialBackoff(task.Epsilon, task.CurrentRetries)
 
+		fmt.Println("LLLLLLLLL")
 		if _, err := m.tasks.UpdateByID(ctx, task.ID, bson.M{
 			"$set": bson.M{
 				"status":             "pending",
@@ -187,6 +194,94 @@ func (m *MongoStore) GetLeaseExpiredTasks(ctx context.Context) error {
 			return err
 		}
 
+	}
+
+	return nil
+}
+
+func (m *MongoStore) ExtendTaskLease(ctx context.Context, taskID []string) error {
+	filter := bson.M{"_id": bson.M{"$in": taskID}}
+	update := bson.M{"$set": bson.M{
+		"visibility_timeout": time.Now().UTC().Add(internal.DefaultWorkerLeaseDuration),
+		"status":             "running",
+	}}
+
+	_, err := m.tasks.UpdateMany(ctx, filter, update)
+	return err
+}
+
+// Debug: not working, it's driving me mad
+func (m *MongoStore) ProcessTaskResult(ctx context.Context, result *pb.TaskResult) error {
+	task, err := m.GetTask(ctx, result.TaskId)
+	if err != nil {
+		return err
+	}
+
+	set := bson.D{}
+
+	switch result.Status {
+	case pb.Status_OK:
+		//calculate next run time if reoccurrence is greater that zero
+		if task.Reoccurrence == -1 {
+			//run indefinitely
+			nextRunDuration, _ := duration.Parse(task.Schedule)
+			nextRun := time.Now().UTC().Add(nextRunDuration.ToTimeDuration())
+
+			set = append(set,
+				bson.E{Key: "status", Value: "pending"},
+				bson.E{Key: "next_run_at", Value: nextRun},
+				bson.E{Key: "visibility_timeout", Value: time.Time{}},
+				bson.E{Key: "last_run_at", Value: time.Now().UTC()},
+				bson.E{Key: "last_success", Value: time.Now().UTC()},
+			)
+		} else if task.Reoccurrence == 0 {
+			set = append(set,
+				bson.E{Key: "status", Value: "finished"},
+				bson.E{Key: "next_run_at", Value: time.Time{}},
+				bson.E{Key: "visibility_timeout", Value: time.Time{}},
+				bson.E{Key: "last_run_at", Value: time.Now().UTC()},
+				bson.E{Key: "last_success", Value: time.Now().UTC()},
+			)
+		} else {
+			nextRunDuration, _ := duration.Parse(task.Schedule)
+			nextRun := time.Now().UTC().Add(nextRunDuration.ToTimeDuration())
+
+			set = append(set,
+				bson.E{Key: "status", Value: "pending"},
+				bson.E{Key: "next_run_at", Value: nextRun},
+				bson.E{Key: "visibility_timeout", Value: time.Time{}},
+				bson.E{Key: "last_run_at", Value: time.Now().UTC()},
+				bson.E{Key: "last_success", Value: time.Now().UTC()},
+				bson.E{Key: "reoccurrence", Value: task.Reoccurrence - 1},
+			)
+
+		}
+	case pb.Status_ERROR:
+		if task.CurrentRetries != task.Retries {
+			next_run_at := internal.CalculateExponientialBackoff(task.Epsilon, task.CurrentRetries)
+
+			set = append(set,
+				bson.E{Key: "status", Value: "pending"},
+				bson.E{Key: "next_run_at", Value: next_run_at},
+				bson.E{Key: "visibility_timeout", Value: time.Time{}},
+				bson.E{Key: "last_error", Value: time.Now().UTC()},
+				bson.E{Key: "current_retries", Value: task.CurrentRetries + 1},
+			)
+		} else {
+
+			set = append(set,
+				bson.E{Key: "status", Value: "finished"},
+				bson.E{Key: "next_run_at", Value: time.Time{}},
+				bson.E{Key: "visibility_timeout", Value: time.Time{}},
+				bson.E{Key: "last_error", Value: time.Now().UTC()},
+			)
+
+		}
+	}
+
+	update := bson.M{"$set": set}
+	if _, err := m.tasks.UpdateOne(ctx, bson.D{{"_id", task.ID}}, update); err != nil {
+		return err
 	}
 
 	return nil
