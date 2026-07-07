@@ -44,10 +44,11 @@ type StorageEngine interface {
 	ExtendTaskLease(ctx context.Context, taskID []string) error
 
 	ProcessTaskResult(ctx context.Context, result *pb.TaskResult) error
+	ProcessBatchTaskResult(ctx context.Context, results []*pb.TaskResult) error
 
 	//Used only for testing
 	GetTaskByName(ctx context.Context, taskName string) (*domain.Task, error)
-	Flush() error
+	Flush(ctx context.Context) error
 }
 
 // LeaseStorage provides the atomic storage interface required to facilitate
@@ -62,7 +63,7 @@ type LeaseStorage interface {
 	AquireLease(ctx context.Context, lease *domain.Lease) error
 	GetLease(ctx context.Context) (*domain.Lease, error)
 	DeleteLease(ctx context.Context, candidateID string) error
-	Flush() error
+	Flush(ctx context.Context) error
 }
 
 // type WokerSessionStore interface {}

@@ -93,6 +93,8 @@ type SchedulerOptions struct {
 
 	GRPCPort int
 
+	FaultyWorkerTimeout time.Duration
+
 	//Logger to be used. Default to log.Default()
 	Logger *logrus.Logger
 }
@@ -120,6 +122,10 @@ func NewScheduler(opts SchedulerOptions) *Scheduler {
 		opts.GRPCPort = 50051
 	}
 
+	if opts.FaultyWorkerTimeout == 0 {
+		opts.FaultyWorkerTimeout = 10 * time.Second
+	}
+
 	scheduler := &Scheduler{
 		ID:            opts.ID,
 		ctx:           ctx,
@@ -129,7 +135,13 @@ func NewScheduler(opts SchedulerOptions) *Scheduler {
 		grpcPort:      opts.GRPCPort,
 	}
 
-	dispatch := NewDispatcher(opts.StorageEngine, opts.DispatcherTimeout, logger, &scheduler.wg)
+	dispatch := NewDispatcher(DispatcherOption{
+		Store:               opts.StorageEngine,
+		Timeout:             opts.DispatcherTimeout,
+		Logger:              logger,
+		Wg:                  &scheduler.wg,
+		FaultyWorkerTimeout: opts.FaultyWorkerTimeout,
+	})
 	scheduler.Dispatcher = dispatch
 
 	elector := NewElector(opts.ID, opts.LeaseStorage, opts.LeaseDuration, logger, &scheduler.wg)
@@ -167,46 +179,48 @@ func (s *Scheduler) Start() error {
 }
 
 func (s *Scheduler) startElector() {
-	s.wg.Go(func() {
-		s.stateTransition()
-	})
+
+	s.stateTransition()
+
 	s.watcher = s.Elector.Run(s.ctx)
 
 }
 
 func (s *Scheduler) stateTransition() {
-	for {
-		s.Lock()
-		select {
-		case <-s.ctx.Done():
-			s.State = Dead
-			s.Unlock()
-			s.Logger.Info("Stopping scheduler")
-			return
-		case watch := <-s.watcher:
-			switch watch.Err {
-			case internal.ErrCannotAquireLock:
-				if s.State == Leader {
-					s.Logger.Info("Leader lost")
-					s.Dispatcher.Stop()
-				}
-				s.State = Follower
-			case nil:
-				if s.State != Leader {
-					s.Logger.Info("Leader Acquired")
-					s.Dispatcher.Run(s.ctx)
-				}
-				s.State = Leader
-			default:
-				s.Logger.Errorf("error as occured %v", watch.Err)
-				s.Stop()
+	s.wg.Go(func() {
+		for {
+			s.Lock()
+			select {
+			case <-s.ctx.Done():
+				s.State = Dead
 				s.Unlock()
+				s.Logger.Info("Stopping scheduler")
 				return
+			case watch := <-s.watcher:
+				switch watch.Err {
+				case internal.ErrCannotAquireLock:
+					if s.State == Leader {
+						s.Logger.Info("Leader lost")
+						s.Dispatcher.Stop()
+					}
+					s.State = Follower
+				case nil:
+					if s.State != Leader {
+						s.Logger.Info("Leader Acquired")
+						s.Dispatcher.Run(s.ctx)
+					}
+					s.State = Leader
+				default:
+					s.Logger.Errorf("error as occured %v", watch.Err)
+					s.Stop()
+					s.Unlock()
+					return
+				}
+				s.Unlock()
 			}
-			s.Unlock()
-		}
 
-	}
+		}
+	})
 }
 
 func (s *Scheduler) Stop() error {
@@ -242,8 +256,12 @@ func (s *Scheduler) AddTask(ctx context.Context, addedTask *domain.AddTask) erro
 	nextRunDuration, _ := duration.Parse(addedTask.Schedule)
 	nextRun := time.Now().UTC().Add(nextRunDuration.ToTimeDuration())
 
+	if addedTask.ID == "" {
+		addedTask.ID = uuid.New().String()
+	}
+
 	task := &domain.Task{
-		ID:           uuid.New().String(),
+		ID:           addedTask.ID,
 		Name:         addedTask.Name,
 		TaskType:     addedTask.TaskType,
 		Reoccurrence: addedTask.Reoccurrence,

@@ -50,6 +50,7 @@ message TaskResult {
    string task_id = 1;
    Status status = 2;
    string error_message = 3;
+   string worker_id = 4;
 };
 
 message TaskResultBatch {

@@ -68,6 +68,7 @@ type Task struct {
 }
 
 type AddTask struct {
+	ID       string          `json:"id"`
 	Name     string          `json:"name"`
 	TaskType string          `json:"task_type"`
 	Command  json.RawMessage `json:"command"`

@@ -210,10 +210,12 @@ func (m *MongoStore) ExtendTaskLease(ctx context.Context, taskID []string) error
 	return err
 }
 
-// Debug: not working, it's driving me mad
 func (m *MongoStore) ProcessTaskResult(ctx context.Context, result *pb.TaskResult) error {
 	task, err := m.GetTask(ctx, result.TaskId)
 	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil
+		}
 		return err
 	}
 
@@ -280,8 +282,21 @@ func (m *MongoStore) ProcessTaskResult(ctx context.Context, result *pb.TaskResul
 	}
 
 	update := bson.M{"$set": set}
-	if _, err := m.tasks.UpdateOne(ctx, bson.D{{"_id", task.ID}}, update); err != nil {
+
+	_, err = m.tasks.UpdateOne(ctx, bson.M{"_id": task.ID}, update)
+	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (m *MongoStore) ProcessBatchTaskResult(ctx context.Context, results []*pb.TaskResult) error {
+	for _, result := range results {
+		err := m.ProcessTaskResult(ctx, result)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -333,14 +348,18 @@ func (m *MongoStore) DeleteLease(ctx context.Context, candidateID string) error 
 	return err
 }
 
-func (m *MongoStore) Flush() error {
-	_, err := m.tasks.DeleteMany(context.Background(), bson.M{})
+func (m *MongoStore) Flush(ctx context.Context) error {
+	_, err := m.tasks.DeleteMany(ctx, bson.M{})
 	if err != nil {
 		return err
 	}
 
-	_, err = m.lease.DeleteMany(context.Background(), bson.M{})
+	_, err = m.lease.DeleteMany(ctx, bson.M{})
 	if err != nil {
+		return err
+	}
+
+	if err = m.db.Client().Disconnect(ctx); err != nil {
 		return err
 	}
 	return nil

@@ -109,10 +109,5 @@ func TestAddTaskToScheduler(t *testing.T) {
 		})
 	}
 
-	scheduler.StorageEngine.Flush()
+	scheduler.StorageEngine.Flush(context.Background())
 }
-
-// func TestDeleteTaskFromScheduler(t *testing.T) {
-// 	scheduler := NewScheduler(storage.NewInMemStorage())
-
-// }

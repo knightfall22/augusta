@@ -117,7 +117,14 @@ func (i *InMemStorage) ProcessTaskResult(ctx context.Context, result *pb.TaskRes
 	return nil
 }
 
-func (i *InMemStorage) Flush() error {
+func (i *InMemStorage) ProcessBatchTaskResult(ctx context.Context, results []*pb.TaskResult) error {
+	i.Lock()
+	defer i.Unlock()
+
+	return nil
+}
+
+func (i *InMemStorage) Flush(ctx context.Context) error {
 	i.Lock()
 	defer i.Unlock()
 

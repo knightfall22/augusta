@@ -376,6 +376,7 @@ type TaskResult struct {
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	Status        Status                 `protobuf:"varint,2,opt,name=status,proto3,enum=augusta.v1.Status" json:"status,omitempty"`
 	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	WorkerId      string                 `protobuf:"bytes,4,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -427,6 +428,13 @@ func (x *TaskResult) GetStatus() Status {
 func (x *TaskResult) GetErrorMessage() string {
 	if x != nil {
 		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *TaskResult) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
 	}
 	return ""
 }
@@ -746,12 +754,13 @@ const file_internal_api_v1_augusta_proto_rawDesc = "" +
 	"\x05tasks\x18\x01 \x03(\v2\x10.augusta.v1.TaskR\x05tasks\"T\n" +
 	"\rTaskHeartbeat\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12&\n" +
-	"\x0factive_task_ids\x18\x02 \x03(\tR\ractiveTaskIds\"v\n" +
+	"\x0factive_task_ids\x18\x02 \x03(\tR\ractiveTaskIds\"\x93\x01\n" +
 	"\n" +
 	"TaskResult\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12*\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x12.augusta.v1.StatusR\x06status\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"`\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12\x1b\n" +
+	"\tworker_id\x18\x04 \x01(\tR\bworkerId\"`\n" +
 	"\x0fTaskResultBatch\x120\n" +
 	"\aresults\x18\x01 \x03(\v2\x16.augusta.v1.TaskResultR\aresults\x12\x1b\n" +
 	"\tworker_id\x18\x02 \x01(\tR\bworkerId\"\x9e\x02\n" +

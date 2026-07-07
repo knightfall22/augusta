@@ -3,7 +3,6 @@ package augusta
 import (
 	"context"
 	"io"
-	"log"
 	"sync"
 	"time"
 
@@ -34,6 +33,8 @@ type Worker struct {
 	currentBatch     []*pb.TaskResult
 	resultCh         chan *pb.TaskResult
 
+	ActiveWorkerHeartBeatTimeout time.Duration
+
 	Processor Processor
 
 	active_tasks map[string]struct{}
@@ -51,13 +52,15 @@ type Worker struct {
 }
 
 type WorkerOpts struct {
-	ID                      string
-	WorkerHeartbeatInterval time.Duration
-	Tags                    []string
-	SchedulerAddr           string
-	BatchTask               bool
-	BatchTaskTimeout        time.Duration
-	BatchMaxSize            int
+	ID                           string
+	WorkerHeartbeatInterval      time.Duration
+	Tags                         []string
+	SchedulerAddr                string
+	BatchTask                    bool
+	BatchTaskTimeout             time.Duration
+	BatchMaxSize                 int
+	ActiveWorkerHeartBeatTimeout time.Duration
+	Processor                    Processor
 }
 
 func NewWorker(opts WorkerOpts) (*Worker, error) {
@@ -92,21 +95,27 @@ func NewWorker(opts WorkerOpts) (*Worker, error) {
 		opts.BatchMaxSize = 50
 	}
 
+	if opts.ActiveWorkerHeartBeatTimeout == 0 {
+		opts.ActiveWorkerHeartBeatTimeout = 2 * time.Second
+	}
+
 	return &Worker{
-		ID:                      opts.ID,
-		Tags:                    opts.Tags,
-		WorkerHeartbeatInterval: opts.WorkerHeartbeatInterval,
-		SchedulerAddr:           opts.SchedulerAddr,
-		BatchTask:               opts.BatchTask,
-		BatchTaskTimeout:        opts.BatchTaskTimeout,
-		BatchMaxSize:            opts.BatchMaxSize,
-		currentBatch:            make([]*pb.TaskResult, 0),
-		resultCh:                make(chan *pb.TaskResult),
-		Logger:                  logger.WithField("ID", opts.ID),
-		conn:                    conn,
-		client:                  client,
-		quit:                    make(chan struct{}),
-		active_tasks:            make(map[string]struct{}),
+		ID:                           opts.ID,
+		Tags:                         opts.Tags,
+		WorkerHeartbeatInterval:      opts.WorkerHeartbeatInterval,
+		SchedulerAddr:                opts.SchedulerAddr,
+		BatchTask:                    opts.BatchTask,
+		BatchTaskTimeout:             opts.BatchTaskTimeout,
+		BatchMaxSize:                 opts.BatchMaxSize,
+		Processor:                    opts.Processor,
+		currentBatch:                 make([]*pb.TaskResult, 0),
+		resultCh:                     make(chan *pb.TaskResult),
+		ActiveWorkerHeartBeatTimeout: opts.ActiveWorkerHeartBeatTimeout,
+		Logger:                       logger.WithField("ID", opts.ID),
+		conn:                         conn,
+		client:                       client,
+		quit:                         make(chan struct{}),
+		active_tasks:                 make(map[string]struct{}),
 	}, nil
 }
 
@@ -119,6 +128,7 @@ func (w *Worker) Start(ctx context.Context) error {
 
 	w.stream = stream
 
+	//TODO: look into adding context to these functions or wrap ctx with stream context
 	w.workerHeartbeat()
 	w.msgListener()
 	w.activeTaskHeartbeat()
@@ -189,10 +199,10 @@ func (w *Worker) msgListener() {
 
 			switch msg.Payload.(type) {
 			case *pb.ServerMessage_Tasks:
-				log.Println("LOOK AT ME!!", msg.GetTasks().GetTasks())
 				if w.BatchTask == true {
 					w.performBatchWork(msg.GetTasks().GetTasks())
 				} else {
+					w.Logger.Infof("received tasks: %d", len(msg.GetTasks().GetTasks()))
 					w.performWork(msg.GetTasks().GetTasks())
 				}
 			case *pb.ServerMessage_Ack:
@@ -252,6 +262,7 @@ func (w *Worker) sendTaskResult(id string, status pb.Status, errMsg string) erro
 				TaskId:       id,
 				Status:       status,
 				ErrorMessage: errMsg,
+				WorkerId:     w.ID,
 			},
 		},
 	})
@@ -388,6 +399,7 @@ func (w *Worker) flushBatchTask() {
 }
 
 func (w *Worker) activeTaskHeartbeat() {
+	ticker := time.NewTicker(w.ActiveWorkerHeartBeatTimeout)
 	w.wg.Go(func() {
 
 		for {
@@ -396,14 +408,12 @@ func (w *Worker) activeTaskHeartbeat() {
 				return
 			case <-w.stream.Context().Done():
 				return
-			default:
+			case <-ticker.C:
 				activeTasks := w.activeTasksSlice()
 
 				if len(activeTasks) == 0 {
 					continue
 				}
-
-				log.Printf("HHHHHHHH %v", w.active_tasks)
 
 				if err := w.stream.Send(&pb.ClientMessage{
 					Payload: &pb.ClientMessage_TaskHeartbeat{
