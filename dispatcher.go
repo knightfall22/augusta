@@ -28,29 +28,88 @@ type SchedulerAlgorithm interface {
 	Pick(scores map[string]float64, candidates []*WorkerSession) *WorkerSession
 }
 
+// Dispatcher is the central Control Plane of the Augusta scheduler.
+// It acts as the bridge between three different worlds:
+// 1. The persistent store where task state lives.
+// 2. The in-memory network registry where live worker TCP sockets live.
+// 3. The scheduling algorithm that decides which worker gets which task.
 type Dispatcher struct {
+
+	// Store is the interface to your persistent database (e.g., MongoDB).
+	// The Dispatcher uses this to query for PENDING tasks, extend visibility
+	// leases when workers heartbeat, and finalize task states (SUCCESS/FAILED).
 	Store internal.StorageEngine
 
+	// WorkerStore is the thread-safe, in-memory Connection Registry.
+	// When a worker connects via gRPC, its active session (and Go channel) is
+	// stored here. The Dispatcher queries this store to know who is online
+	// before attempting to route any tasks.
 	WorkerStore SessionStore
 
+	// Scheduler is the pluggable routing brain (e.g., RoundRobin, LeastLoaded).
+	// Once the Dispatcher pulls tasks from the Store and active workers from
+	// the WorkerStore, it passes them to this algorithm to calculate the exact
+	// task-to-worker assignments.
 	Scheduler SchedulerAlgorithm
 
+	// faultyWorkerTimeout defines the threshold for the background Sweeper.
+	// If a worker's TCP connection drops silently (a "ghost" connection), it
+	// won't send heartbeats. The Sweeper compares this timeout against the
+	// worker's LastHeartbeat and forcibly evicts dead sessions to prevent
+	// tasks from being routed into a black hole.
 	faultyWorkerTimeout time.Duration
 
-	wg      *sync.WaitGroup
-	logger  *logrus.Entry
+	wg     *sync.WaitGroup
+	logger *logrus.Entry
+
+	// timeout is the polling interval (in seconds) that dictates how often the
+	// background 'run' loop hits the Store asking for new PENDING tasks.
+	// It also dictates the pacing of the database lease 'reaper' loop.
 	timeout int
-	done    chan struct{}
+
+	done chan struct{}
 	pb.UnimplementedSchedulerServiceServer
 }
 
+// DispatcherOption is the configuration payload used to initialize a new Dispatcher.
 type DispatcherOption struct {
-	Store               internal.StorageEngine
-	WorkerStore         SessionStore
-	Scheduler           SchedulerAlgorithm
-	Logger              *logrus.Entry
-	Timeout             int
-	Wg                  *sync.WaitGroup
+	// Store is the mandatory persistent storage engine (e.g., MongoDB, PostgreSQL).
+	// It holds the golden state of all tasks (QUEUED, PENDING, SUCCESS, FAILED).
+	Store internal.StorageEngine
+
+	// WorkerStore is the interface for the connection registry.
+	// Allowing this to be injected makes it significantly easier to write unit tests
+	// for the Dispatcher by passing in a mocked in-memory store.
+	WorkerStore SessionStore
+
+	// Scheduler is the routing algorithm interface (e.g., RoundRobin, LeastLoaded).
+	// Injecting this allows you to easily hot-swap scheduling strategies based on
+	// your cluster's specific needs without rewriting the Dispatcher logic.
+	Scheduler SchedulerAlgorithm
+
+	// Logger is the pre-configured structured logger (Logrus).
+	// Injecting it allows the parent application to set global log levels,
+	// output formats (like JSON), and hooks (like sending fatal errors to Sentry).
+	Logger *logrus.Entry
+
+	// Timeout defines the core heartbeat rhythm of the Control Plane (in seconds).
+	// 1. It dictates how often the Dispatcher polls the Store for new tasks.
+	// 2. It is multiplied by 2 to determine the Reaper's interval (how often the
+	//    scheduler checks the database for abandoned tasks with expired leases).
+	// If set to 0, it defaults to 5 seconds.
+	Timeout int
+
+	// Wg is the global WaitGroup passed down from the parent application.
+	// The Dispatcher will register all of its background pollers, reapers, and
+	// gRPC streams to this WaitGroup, ensuring the main application does not
+	// exit until the Control Plane has cleanly drained all network connections.
+	Wg *sync.WaitGroup
+
+	// FaultyWorkerTimeout dictates the strictness of the background Sweeper.
+	// It defines how much time must pass without a network ping before the
+	// Dispatcher assumes a worker's TCP socket is a "ghost" connection and
+	// aggressively evicts it from the WorkerStore.
+	// If set to 0, it defaults to 10 seconds.
 	FaultyWorkerTimeout time.Duration
 }
 
@@ -75,12 +134,35 @@ func NewDispatcher(opts DispatcherOption) *Dispatcher {
 		Scheduler:           &RoundRobin{Name: "RoundRobin"},
 	}
 }
+
+// Run acts as the ignition switch for the Augusta Control Plane.
+// It is a non-blocking method that spins up three critical, independent
+// background loops required to maintain the distributed state machine:
+//
+//  1. The Poller (p.run): Periodically queries the Store for new PENDING tasks,
+//     passes them through the routing algorithm, and drops them into the
+//     appropriate worker's Go channel for network delivery.
+//
+//  2. The Task Reaper (p.reaper): Periodically scans the Store for tasks whose
+//     visibility leases have expired. If a worker crashes before finishing a task,
+//     this loop catches it and safely re-queues the task for another worker.
+//
+//  3. The Worker Sweeper (p.reapDeadWorkers): Scans the in-memory Connection Registry
+//     for "ghost" network sockets. If a worker hasn't sent a heartbeat recently,
+//     this loop forcibly evicts the session so the Poller stops routing tasks to a dead node.
+//
+// All three background loops monitor the provided context.Context. If the parent
+// application cancels this context, the Dispatcher will gracefully halt all polling
+// and sweeping operations.
 func (p *Dispatcher) Run(ctx context.Context) {
 	p.run(ctx)
 	p.reaper(ctx)
 	p.reapDeadWorkers(ctx)
 }
 
+// Periodically queries the Store for new PENDING tasks,
+// passes them through the routing algorithm, and drops them into the
+// appropriate worker's Go channel for network delivery.
 func (p *Dispatcher) run(ctx context.Context) {
 	logger := p.logger.WithContext(ctx).WithField("method", "run")
 
@@ -108,6 +190,9 @@ func (p *Dispatcher) run(ctx context.Context) {
 	})
 }
 
+// Periodically scans the Store for tasks whose
+// visibility leases have expired. If a worker crashes before finishing a task,
+// this loop catches it and safely re-queues the task for another worker.
 func (p *Dispatcher) reaper(ctx context.Context) {
 	logger := p.logger.WithContext(ctx).WithField("method", "reaper")
 	reaperTimeout := time.Duration((p.timeout * 2)) * time.Second
@@ -128,6 +213,9 @@ func (p *Dispatcher) reaper(ctx context.Context) {
 	})
 }
 
+// Scans the in-memory Connection Registry
+// for "ghost" network sockets. If a worker hasn't sent a heartbeat recently,
+// this loop forcibly evicts the session so the Poller stops routing tasks to a dead node.
 func (p *Dispatcher) reapDeadWorkers(ctx context.Context) {
 	logger := p.logger.WithContext(ctx).WithField("method", "reapDeadWorkers")
 
@@ -147,6 +235,13 @@ func (p *Dispatcher) reapDeadWorkers(ctx context.Context) {
 	})
 }
 
+// dispatch is the "Routing Brain" of the Control Plane.
+// It is called by the background database poller whenever new PENDING tasks are found.
+//
+// CRITICAL ARCHITECTURE: This function performs ZERO network I/O.
+// If this function tried to write directly to a gRPC stream, a slow worker
+// could freeze the entire Dispatcher, preventing it from polling the database.
+// Instead, this function acts purely as an in-memory mail sorter.
 func (p *Dispatcher) dispatch(ctx context.Context, tasks []*domain.Task) {
 	if len(tasks) > 0 {
 		workers := p.WorkerStore.GetAllSessions()
@@ -165,6 +260,12 @@ func (p *Dispatcher) dispatch(ctx context.Context, tasks []*domain.Task) {
 	p.logger.Debug("no workers available")
 }
 
+// dispatchListener is the "Dedicated Mailman" for a specific worker connection.
+// This function is spawned exactly once when a worker registers, and it runs
+// as a background goroutine for the entire lifespan of that worker's TCP session.
+//
+// It acts as the bridge between internal Go memory (the taskChannel) and
+// external network I/O (the gRPC stream).
 func (p *Dispatcher) dispatchListener(workerID string) {
 	workerSession, err := p.WorkerStore.GetWorkerSession(workerID)
 	if err != nil {
@@ -203,7 +304,15 @@ func (p *Dispatcher) Stop() {
 	p.done <- struct{}{}
 }
 
-// Meet grpc interface
+// ConnectSession is the gRPC entry point for all worker nodes. When a worker
+// dials the Control Plane, this function is invoked and stays alive for the
+// entire duration of that TCP connection.
+//
+// CRITICAL ARCHITECTURE: This function acts as the "Receiver Loop". It sits
+// completely blocked on network reads (stream.Recv()). When it receives a payload,
+// it unwraps the gRPC 'oneof' envelope and routes the data directly to the database.
+// It runs concurrently alongside the 'dispatchListener' (the Sender Loop) on
+// the exact same thread-safe network stream.
 func (p *Dispatcher) ConnectSession(stream pb.SchedulerService_ConnectSessionServer) error {
 	for {
 		message, err := stream.Recv()

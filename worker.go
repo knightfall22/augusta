@@ -18,36 +18,92 @@ type Processor interface {
 	Process(ctx context.Context, task *domain.Task) error
 }
 
+// Worker represents a single distributed execution node. It connects to the
+// Augusta scheduler via a long-lived gRPC bidirectional stream to receive
+// tasks, execute them concurrently, and report results or heartbeats.
 type Worker struct {
+	// ID is the unique identifier for this specific worker instance (usually a UUID).
+	// The scheduler uses this to track the worker's session in its internal registry.
 	ID string
 
+	// Tags represent the capabilities or labels of this worker (e.g., ["gpu", "high-mem"]).
+	// The scheduler's routing algorithm uses these to assign specific tasks to this node.
 	Tags []string
 
+	// SchedulerAddr is the network address of the control plane (e.g., "augusta.local:50051").
+	// In a production environment, this usually points to an L4 Load Balancer.
 	SchedulerAddr string
 
+	// WorkerHeartbeatInterval dictates how often this worker sends a basic "Register"
+	// payload to the scheduler. This keeps the worker's TCP session alive in the
+	// scheduler's connection registry and prevents the sweeper from evicting it.
 	WorkerHeartbeatInterval time.Duration
 
-	BatchTask        bool
-	BatchTaskTimeout time.Duration
-	BatchMaxSize     int
-	currentBatch     []*pb.TaskResult
-	resultCh         chan *pb.TaskResult
+	// BatchTask is a flag determining if task results should be buffered in memory
+	// and sent in chunks (true) or streamed back to the scheduler immediately (false).
+	BatchTask bool
 
+	// BatchTaskTimeout is the "Time Trigger" for the batch flusher. If this duration
+	// elapses, any pending results in the currentBatch are sent over the network,
+	// ensuring low-volume periods don't leave results hanging in memory forever.
+	BatchTaskTimeout time.Duration
+
+	// BatchMaxSize is the "Volume Trigger" for the batch flusher. If the currentBatch
+	// reaches this exact size, it is immediately flushed to prevent memory bloat and
+	// exceeding the gRPC frame size limits.
+	BatchMaxSize int
+
+	// currentBatch is the in-memory buffer holding finished task results waiting
+	// to be flushed. It is protected by the `mu` Mutex to prevent data races.
+	currentBatch []*pb.TaskResult
+
+	// resultCh is a funnel channel. Independent execution goroutines drop their
+	// finished results into this channel, allowing the background batchProcessor
+	// to safely aggregate them without blocking the worker's CPU threads.
+	resultCh chan *pb.TaskResult
+
+	// ActiveWorkerHeartBeatTimeout dictates how often the worker sends an array of
+	// currently executing Task IDs to the scheduler. This tells the database to
+	// extend the "visibility lease" on those tasks so they aren't marked as dead
+	// and retried by another worker.
 	ActiveWorkerHeartBeatTimeout time.Duration
 
+	// Processor is the interface provided by the user. It contains the actual opaque,
+	// business-logic execution code (Process(ctx, task)) that runs when a task arrives.
 	Processor Processor
 
+	// active_tasks is an in-memory set tracking the IDs of all tasks currently in-flight.
+	// It is used to generate the active heartbeat payload and is fiercely protected
+	// by the `mu` Mutex to prevent panics during concurrent reads/writes.
 	active_tasks map[string]struct{}
-	mu           sync.RWMutex
 
+	mu sync.RWMutex
+
+	// client is the underlying gRPC stub used to establish the initial connection
+	// to the scheduler cluster.
 	client pb.SchedulerServiceClient
-	conn   *grpc.ClientConn
+
+	// conn is the raw TCP connection to the gRPC server. It is stored on the struct
+	// so it can be cleanly terminated during the worker's graceful shutdown phase.
+	conn *grpc.ClientConn
+
+	// stream is the active, long-lived bidirectional gRPC socket. It is heavily
+	// multiplexed: the msgListener loop blocks on stream.Recv(), while the heartbeat
+	// and result routines safely call stream.Send() concurrently.
 	stream pb.SchedulerService_ConnectSessionClient
 
+	// Logger is a structured logger pre-populated with the Worker's ID for highly
+	// traceable distributed debugging.
 	Logger *logrus.Entry
 
+	// wg tracks all background goroutines (listeners, flushers, heartbeats). During
+	// a shutdown, Close() waits for this counter to hit zero, guaranteeing no memory
+	// leaks or orphaned processes are left behind.
 	wg sync.WaitGroup
 
+	// quit is a broadcast channel used for graceful shutdown. When w.Close() closes
+	// this channel, every infinite select loop inside the worker instantly catches
+	// the signal and cleanly terminates.
 	quit chan struct{}
 }
 
@@ -108,7 +164,7 @@ func NewWorker(opts WorkerOpts) (*Worker, error) {
 		BatchTaskTimeout:             opts.BatchTaskTimeout,
 		BatchMaxSize:                 opts.BatchMaxSize,
 		Processor:                    opts.Processor,
-		currentBatch:                 make([]*pb.TaskResult, 0),
+		currentBatch:                 make([]*pb.TaskResult, 0, opts.BatchMaxSize),
 		resultCh:                     make(chan *pb.TaskResult),
 		ActiveWorkerHeartBeatTimeout: opts.ActiveWorkerHeartBeatTimeout,
 		Logger:                       logger.WithField("ID", opts.ID),
@@ -139,6 +195,12 @@ func (w *Worker) Start(ctx context.Context) error {
 	return nil
 }
 
+// workerHeartbeat serves two critical purposes in the distributed lifecycle:
+//  1. Handshake: It sends the initial Registration payload so the Control Plane
+//     can create a WorkerSession in its Connection Registry.
+//  2. Keep-Alive: It spins up a background goroutine to periodically ping the
+//     Control Plane. This prevents the L4 Load Balancer from dropping an idle TCP
+//     socket and prevents the Scheduler's Sweeper from prematurely evicting the session.
 func (w *Worker) workerHeartbeat() {
 	if err := w.stream.Send(&pb.ClientMessage{
 		Payload: &pb.ClientMessage_Register{
@@ -177,6 +239,12 @@ func (w *Worker) workerHeartbeat() {
 	})
 }
 
+// msgListener is the primary network ingress engine for the worker.
+// It runs as a dedicated, infinite background goroutine that constantly listens
+// to the gRPC bidirectional stream for incoming commands from the Control Plane.
+//
+// Crucially, this function acts ONLY as a router. It never executes the tasks
+// itself.
 func (w *Worker) msgListener() {
 	w.wg.Go(func() {
 		for {
@@ -212,6 +280,12 @@ func (w *Worker) msgListener() {
 	})
 }
 
+// performWork is responsible for executing a batch of tasks immediately and
+// reporting their results back to the Control Plane one by one.
+//
+// This function implements the "Fan-Out" concurrency pattern. It iterates over
+// the incoming batch and spins up an isolated, independent goroutine for each
+// task, returning almost instantly so the msgListener is never blocked.
 func (w *Worker) performWork(tasks []*pb.Task) {
 	logger := w.Logger.WithField("method", "performWork")
 
@@ -268,6 +342,11 @@ func (w *Worker) sendTaskResult(id string, status pb.Status, errMsg string) erro
 	})
 }
 
+// performBatchWork implements a high-throughput, fan-out execution model.
+// Unlike performWork (which writes results directly to the network), this function
+// funnels all finished results into an internal Go channel (w.resultCh).
+// This allows the background 'batchProcessor' loop to aggregate them and send them
+// to the Control Plane in large, network-efficient chunks.
 func (w *Worker) performBatchWork(tasks []*pb.Task) {
 	logger := w.Logger.WithField("method", "performBatchWork")
 
@@ -398,6 +477,14 @@ func (w *Worker) flushBatchTask() {
 
 }
 
+// activeTaskHeartbeat runs as a continuous background goroutine. Its sole purpose
+// is to aggregate the IDs of all tasks currently executing on this worker and
+// send them to the Control Plane at a regular interval (ActiveWorkerHeartBeatTimeout).
+//
+// The Control Plane uses this payload to execute an update of the tasks in the storage engine, pushing the
+// `visibility_timeout` of these specific tasks further into the future.
+// If this loop stops, the Scheduler's Reaper will assume the worker died,
+// mark the tasks as abandoned, and re-queue them for other workers to pick up.
 func (w *Worker) activeTaskHeartbeat() {
 	ticker := time.NewTicker(w.ActiveWorkerHeartBeatTimeout)
 	w.wg.Go(func() {

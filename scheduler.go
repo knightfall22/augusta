@@ -57,45 +57,109 @@ func (s state) String() string {
 // opaque payloads, focusing entirely on managing execution state, temporal routing (ISO 8601),
 // and exponential backoff, while leaving the payload interpretation entirely to the worker nodes.
 type Scheduler struct {
-	// ID is the unique identifier of the task. Uses UUID
-	ID    string
-	State state
-
-	StorageEngine internal.StorageEngine
-	Elector       *Elector
-	Dispatcher    *Dispatcher
-
-	Logger *logrus.Entry
-
-	grpcPort   int
-	grpcServer *grpc.Server
-	listener   net.Listener
-
-	//todo: watch the context as development continues and gauge if it needed
-	ctx    context.Context
-	cancel context.CancelFunc
-	sync.RWMutex
-	watcher chan Watcher
-	wg      sync.WaitGroup
-}
-
-type SchedulerOptions struct {
-	//Identifier of the scheduler. Is optional and default to UUID.
+	// ID is the unique identifier of this specific Scheduler node (usually a UUID).
+	// It is used to identify who currently owns the database Leader lease.
 	ID string
 
+	// State represents the current role of this node (Follower, Leader, or Dead).
+	// This state dictates whether the Dispatcher is actively polling the database
+	// for tasks, or standing by waiting for the current Leader to fail.
+	State state
+
+	// StorageEngine is the interface to the persistent database.
+	// The Scheduler uses this to directly add, delete, and query tasks via its API,
+	// operations that are completely independent of its Follower/Leader state.
 	StorageEngine internal.StorageEngine
 
+	// Elector handles the distributed lease-acquisition loop. It continuously
+	// tries to grab or renew the leadership lock in the database and sends
+	// role-change events down the 'watcher' channel.
+	Elector *Elector
+
+	// Dispatcher is the routing engine. The Scheduler will only start() this
+	// dispatcher when promoted to Leader, and will stop() it if demoted to Follower.
+	Dispatcher *Dispatcher
+
+	// Logger is a structured logger pre-configured with the Scheduler's ID
+	// to make debugging cluster-wide leader transitions much easier.
+	Logger *logrus.Entry
+
+	// grpcPort dictates which TCP port the gRPC server will bind to.
+	grpcPort int
+
+	// grpcServer is the underlying gRPC engine that accepts incoming connections
+	// from worker nodes. Even if this Scheduler is a Follower, the gRPC server
+	// remains active to accept initial connections (which the L4 Load Balancer might route here).
+	grpcServer *grpc.Server
+
+	// listener is the raw network socket bound to the grpcPort. It is stored
+	// on the struct so it can be forcefully closed during a graceful shutdown.
+	listener net.Listener
+
+	// ctx and cancel manage the global lifecycle of this Scheduler node.
+	// Calling Stop() invokes cancel(), which cascades down to the Elector,
+	// the Dispatcher, and the gRPC server to cleanly halt all background operations.
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	sync.RWMutex
+
+	// watcher is the communication pipeline from the Elector.
+	// The Elector drops events into this channel whenever the database lease
+	// is successfully acquired or lost, triggering the start/stop of the Dispatcher.
+	watcher chan Watcher
+
+	// wg tracks the background routines of the Scheduler itself (e.g., the gRPC
+	// serving loop and the stateTransition loop). Used to ensure Stop() blocks
+	// until everything is cleanly terminated.
+	wg sync.WaitGroup
+}
+
+// SchedulerOptions provides the configuration necessary to initialize a new
+// distributed Scheduler node.
+type SchedulerOptions struct {
+	// ID is the unique identifier of this Scheduler node. It is highly recommended
+	// to provide a stable, unique ID (like a Kubernetes Pod name or EC2 instance ID)
+	// because this value is written to the LeaseStorage to claim the Leader lock.
+	// If left empty, it defaults to a newly generated UUID.
+	ID string
+
+	// StorageEngine is the primary data store (e.g., MongoDB, PostgreSQL) where
+	// the actual tasks and their execution states (PENDING, SUCCESS, FAILED) are persisted.
+	StorageEngine internal.StorageEngine
+
+	// LeaseStorage is the coordination store (e.g., Redis, etcd, or a dedicated
+	// MongoDB collection) used exclusively for Leader Election. It ensures that
+	// only one Scheduler node in the cluster acts as the active Dispatcher at a time.
 	LeaseStorage internal.LeaseStorage
 
+	// LeaseDuration defines the Time-To-Live (TTL) in seconds for the leader lock.
+	// If the active Leader crashes or experiences a network partition, the
+	// lock will expire after this duration, allowing a Follower node to promote itself.
 	LeaseDuration int
 
+	// DispatcherTimeout dictates the primary polling rhythm of the Control Plane.
+	// It determines how often the active Leader queries the StorageEngine for new tasks
+	// and how frequently the Reaper checks for expired task leases.
+	// If set to 0, it defaults to 5 seconds.
 	DispatcherTimeout int
 
+	// GRPCPort is the local TCP port the Scheduler will bind to for accepting
+	// bidirectional streams from worker nodes.
+	// If set to 0, it defaults to 50051.
 	GRPCPort int
 
+	// FaultyWorkerTimeout defines the strictness of the ghost connection Sweeper.
+	// If a worker fails to send a heartbeat ping within this duration, the Leader
+	// will assume the network socket is dead and forcibly evict the worker's session
+	// to prevent routing tasks into a black hole.
+	// If set to 0, it defaults to 10 seconds.
 	FaultyWorkerTimeout time.Duration
 
-	//Logger to be used. Default to log.Default()
+	// Logger provides structured observability for the node.
+	// Injecting it allows the parent application to control log levels, JSON formatting,
+	// and centralized log aggregation hooks (e.g., sending fatal errors to Sentry).
+	// If left nil, it defaults to a standard Logrus instance.
 	Logger *logrus.Logger
 }
 
