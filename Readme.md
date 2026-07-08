@@ -153,17 +153,17 @@ Creates a new task in the Augusta scheduler. The request body must be a JSON obj
 
 **AddTask Payload Fields**
 
-| JSON Field     | Type        | Required | Description                                                                                                                                    |
-| -------------- | ----------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`         | String      | **Yes**  | The descriptive name of the task.                                                                                                              |
-| `task_type`    | String      | **Yes**  | The type of task. The scheduler uses this to route to the appropriate worker.                                                                  |
-| `command`      | JSON Object | **Yes**  | The specific command payload to be executed. The scheduler is agnostic to this data.                                                           |
-| `id`           | String      | No       | The unique identifier (UUID) for the task. If omitted, the system typically generates one.                                                     |
-| `disabled`     | Boolean     | No       | If set to `true`, the task is created but will not be scheduled to run.                                                                        |
-| `retries`      | Integer     | No       | The maximum number of times the task should be retried upon failure.                                                                           |
-| `epsilon`      | String      | No       | The time interval to wait before retrying a failed task.                                                                                       |
-| `schedule`     | String      | No       | The execution schedule using ISO8601 interval format (e.g., `"PT30M"` for 30 minutes). If left empty, the task runs immediately and only once. |
-| `reoccurrence` | Integer     | No       | How many times the task should run. `0` = runs once, `-1` = runs indefinitely. Used in conjunction with `schedule`.                            |
+| JSON Field     | Type       | Required | Description                                                                                                                                    |
+| -------------- | ---------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`         | String     | **Yes**  | The descriptive name of the task.                                                                                                              |
+| `task_type`    | String     | **Yes**  | The type of task. The scheduler uses this to route to the appropriate worker.                                                                  |
+| `command`      | Raw Binary | **Yes**  | The specific command payload to be executed. The scheduler is agnostic to this data.                                                           |
+| `id`           | String     | No       | The unique identifier (UUID) for the task. If omitted, the system typically generates one.                                                     |
+| `disabled`     | Boolean    | No       | If set to `true`, the task is created but will not be scheduled to run.                                                                        |
+| `retries`      | Integer    | No       | The maximum number of times the task should be retried upon failure.                                                                           |
+| `epsilon`      | String     | No       | The time interval to wait before retrying a failed task.                                                                                       |
+| `schedule`     | String     | No       | The execution schedule using ISO8601 interval format (e.g., `"PT30M"` for 30 minutes). If left empty, the task runs immediately and only once. |
+| `reoccurrence` | Integer    | No       | How many times the task should run. `0` = runs once, `-1` = runs indefinitely. Used in conjunction with `schedule`.                            |
 
 **Example Request:**
 
