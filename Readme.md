@@ -129,9 +129,7 @@ func main() {
 
 ```
 
-Here is the API documentation for the Augusta Scheduler Server, based on the provided source files.
-
-### **API Endpoints Overview**
+## **API Endpoints Overview**
 
 | HTTP Method | Endpoint              | Description                                                     |
 | ----------- | --------------------- | --------------------------------------------------------------- |
