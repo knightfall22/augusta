@@ -98,6 +98,19 @@ func (i *InMemStorage) DisableTask(ctx context.Context, taskID string) error {
 	return nil
 }
 
+func (i *InMemStorage) EnableTask(ctx context.Context, taskID string) error {
+	i.Lock()
+	defer i.Unlock()
+
+	if _, ok := i.tasks[taskID]; !ok {
+		return utils.ErrNoTaskFound
+	}
+
+	i.tasks[taskID].Disabled = false
+
+	return nil
+}
+
 func (i *InMemStorage) GetPendingTasks(ctx context.Context) ([]*domain.Task, error) {
 	i.Lock()
 	defer i.Unlock()

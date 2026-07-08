@@ -352,6 +352,11 @@ func (m *MongoStore) DisableTask(ctx context.Context, taskID string) error {
 	return err
 }
 
+func (m *MongoStore) EnableTask(ctx context.Context, taskID string) error {
+	_, err := m.tasks.UpdateOne(ctx, bson.M{"_id": taskID}, bson.M{"$set": bson.M{"disabled": false}})
+	return err
+}
+
 func (m *MongoStore) CheckConnection(ctx context.Context) error {
 	return m.db.Client().Ping(ctx, nil)
 }

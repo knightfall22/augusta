@@ -362,3 +362,7 @@ func (s *Scheduler) GetPendingTasks(ctx context.Context) ([]*domain.Task, error)
 func (s *Scheduler) DisableTask(ctx context.Context, taskID string) error {
 	return s.StorageEngine.DisableTask(ctx, taskID)
 }
+
+func (s *Scheduler) EnableTask(ctx context.Context, taskID string) error {
+	return s.StorageEngine.EnableTask(ctx, taskID)
+}

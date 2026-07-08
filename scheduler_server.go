@@ -29,7 +29,8 @@ func (s *SchedulerServer) initRouter() error {
 	s.Router.HandleFunc("POST /tasks", s.AddTask)
 	s.Router.HandleFunc("GET /tasks/{id}", s.GetTask)
 	s.Router.HandleFunc("DELETE /tasks/{id}", s.DeleteTask)
-	s.Router.HandleFunc("DELETE /tasks/disable/{id}", s.DisableTask)
+	s.Router.HandleFunc("DELETE /tasks/{id}/disable", s.DisableTask)
+	s.Router.HandleFunc("PATCH /tasks/{id}/enable", s.EnableTask)
 	return nil
 }
 
@@ -203,6 +204,26 @@ func (s *SchedulerServer) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		Status:  "ok",
 		Error:   false,
 		Message: "Task deleted successfully",
+		Data:    nil,
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
+func (s *SchedulerServer) EnableTask(w http.ResponseWriter, r *http.Request) {
+	logger := s.logger.WithContext(r.Context()).WithField("method", "EnableTask")
+	taskID := r.PathValue("id")
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := s.Scheduler.EnableTask(r.Context(), taskID); err != nil {
+		logger.Error(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	response := domain.APIResponse{
+		Status:  "ok",
+		Error:   false,
+		Message: "Task enabled successfully",
 		Data:    nil,
 	}
 	json.NewEncoder(w).Encode(response)

@@ -39,6 +39,7 @@ type StorageEngine interface {
 	GetTask(ctx context.Context, taskID string) (*domain.Task, error)
 	DeleteTask(ctx context.Context, taskID string) error
 	DisableTask(ctx context.Context, taskID string) error
+	EnableTask(ctx context.Context, taskID string) error
 
 	CheckConnection(ctx context.Context) error
 
