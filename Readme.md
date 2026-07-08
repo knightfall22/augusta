@@ -17,7 +17,7 @@ Highlevel overview:
 - [x] Lease based leader election of schedulers
 - [x] Enable and Disable tasks
 - [x] Worker task batching
-- [x] Task statistics
+- [ ] Task statistics
 - [ ] Monitoring dashboard
 - [ ] mTLS
 - [ ] EPVM scheduling algorithm
