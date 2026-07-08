@@ -12,9 +12,11 @@ Highlevel overview:
 
 - [x] Guaranteed exactly once delivery
 - [x] Scheduling of tasks
+- [x] Scheduler uses RoundRobin task allocation
 - [x] Automatic task recovery in case of worker crash
 - [x] Lease based leader election of schedulers
 - [x] Enable and Disable tasks
 - [x] Worker task batching
 - [ ] Monitoring dashboard
 - [ ] mTLS
+- [ ] EPVM scheduling algorithm
