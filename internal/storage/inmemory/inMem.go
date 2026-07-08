@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/knightfall22/augusta/internal"
 	pb "github.com/knightfall22/augusta/internal/api/v1"
 	"github.com/knightfall22/augusta/internal/domain"
+	"github.com/knightfall22/augusta/utils"
 )
 
 type InMemStorage struct {
@@ -33,6 +33,10 @@ func (i *InMemStorage) AddTask(ctx context.Context, task *domain.Task) error {
 func (i *InMemStorage) GetTask(ctx context.Context, taskID string) (*domain.Task, error) {
 	i.Lock()
 	defer i.Unlock()
+
+	if i.tasks[taskID] == nil {
+		return nil, utils.ErrNoTaskFound
+	}
 
 	return i.tasks[taskID], nil
 }
@@ -71,7 +75,7 @@ func (i *InMemStorage) AquireLease(ctx context.Context, lease *domain.Lease) err
 		return nil
 	}
 
-	return internal.ErrCannotAquireLock
+	return utils.ErrCannotAquireLock
 }
 
 func (i *InMemStorage) GetLease(ctx context.Context) (*domain.Lease, error) {
@@ -79,6 +83,19 @@ func (i *InMemStorage) GetLease(ctx context.Context) (*domain.Lease, error) {
 	defer i.Unlock()
 
 	return i.lease, nil
+}
+
+func (i *InMemStorage) DisableTask(ctx context.Context, taskID string) error {
+	i.Lock()
+	defer i.Unlock()
+
+	if _, ok := i.tasks[taskID]; !ok {
+		return utils.ErrNoTaskFound
+	}
+
+	i.tasks[taskID].Disabled = true
+
+	return nil
 }
 
 func (i *InMemStorage) GetPendingTasks(ctx context.Context) ([]*domain.Task, error) {
@@ -121,6 +138,10 @@ func (i *InMemStorage) ProcessBatchTaskResult(ctx context.Context, results []*pb
 	i.Lock()
 	defer i.Unlock()
 
+	return nil
+}
+
+func (i *InMemStorage) CheckConnection(ctx context.Context) error {
 	return nil
 }
 

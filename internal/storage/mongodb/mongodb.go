@@ -9,6 +9,7 @@ import (
 	"github.com/knightfall22/augusta/internal"
 	pb "github.com/knightfall22/augusta/internal/api/v1"
 	"github.com/knightfall22/augusta/internal/domain"
+	"github.com/knightfall22/augusta/utils"
 	"github.com/sosodev/duration"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -86,7 +87,7 @@ func (m *MongoStore) GetTask(ctx context.Context, taskID string) (*domain.Task, 
 	err := m.tasks.FindOne(ctx, bson.M{"_id": taskID}).Decode(&task)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return nil, internal.ErrNoTaskFound
+			return nil, utils.ErrNoTaskFound
 		}
 		return nil, err
 	}
@@ -346,6 +347,15 @@ func (m *MongoStore) GetLease(ctx context.Context) (*domain.Lease, error) {
 func (m *MongoStore) DeleteLease(ctx context.Context, candidateID string) error {
 	_, err := m.lease.DeleteOne(ctx, bson.M{"candidate_id": candidateID})
 	return err
+}
+
+func (m *MongoStore) DisableTask(ctx context.Context, taskID string) error {
+	_, err := m.tasks.UpdateOne(ctx, bson.M{"_id": taskID}, bson.M{"$set": bson.M{"disabled": true}})
+	return err
+}
+
+func (m *MongoStore) CheckConnection(ctx context.Context) error {
+	return m.db.Client().Ping(ctx, nil)
 }
 
 func (m *MongoStore) Flush(ctx context.Context) error {

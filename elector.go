@@ -8,6 +8,7 @@ import (
 
 	"github.com/knightfall22/augusta/internal"
 	"github.com/knightfall22/augusta/internal/domain"
+	"github.com/knightfall22/augusta/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -102,7 +103,7 @@ func (e *Elector) acquireLeaseOrRenew(ctx context.Context, candidateID string) (
 	}); err == nil {
 		return Leader, nil
 	}
-	return Follower, internal.ErrCannotAquireLock
+	return Follower, utils.ErrCannotAquireLock
 }
 
 func (e *Elector) releaseLease(ctx context.Context, candidateID string) error {

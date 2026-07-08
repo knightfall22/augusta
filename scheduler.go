@@ -13,6 +13,7 @@ import (
 	"github.com/knightfall22/augusta/internal"
 	pb "github.com/knightfall22/augusta/internal/api/v1"
 	"github.com/knightfall22/augusta/internal/domain"
+	"github.com/knightfall22/augusta/utils"
 	"github.com/sirupsen/logrus"
 	"github.com/sosodev/duration"
 	"google.golang.org/grpc"
@@ -262,7 +263,7 @@ func (s *Scheduler) stateTransition() {
 				return
 			case watch := <-s.watcher:
 				switch watch.Err {
-				case internal.ErrCannotAquireLock:
+				case utils.ErrCannotAquireLock:
 					if s.State == Leader {
 						s.Logger.Info("Leader lost")
 						s.Dispatcher.Stop()
@@ -351,4 +352,13 @@ func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
 // GetTask gets a task from the storage engine
 func (s *Scheduler) GetTask(ctx context.Context, taskID string) (*domain.Task, error) {
 	return s.StorageEngine.GetTask(ctx, taskID)
+}
+
+// GetPendingTasks gets all pending tasks from the storage engine
+func (s *Scheduler) GetPendingTasks(ctx context.Context) ([]*domain.Task, error) {
+	return s.StorageEngine.GetPendingTasks(ctx)
+}
+
+func (s *Scheduler) DisableTask(ctx context.Context, taskID string) error {
+	return s.StorageEngine.DisableTask(ctx, taskID)
 }

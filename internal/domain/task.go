@@ -6,6 +6,7 @@ import (
 	"time"
 
 	pb "github.com/knightfall22/augusta/internal/api/v1"
+	"github.com/knightfall22/augusta/utils"
 	"github.com/sosodev/duration"
 )
 
@@ -101,7 +102,7 @@ func (t *AddTask) Validate() error {
 	if t.Schedule != "" {
 		_, err := duration.Parse(t.Schedule)
 		if err != nil {
-			return err
+			return utils.ErrInvalidISOInput
 		}
 	}
 	return nil
