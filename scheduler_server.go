@@ -33,10 +33,16 @@ func (s *SchedulerServer) initRouter() error {
 	return nil
 }
 
-func NewSchedulerServer(address string, scheduler *Scheduler) *SchedulerServer {
+func NewSchedulerServer(address string, scheduler *Scheduler, logger *logrus.Logger) *SchedulerServer {
+	if logger == nil {
+		logger = logrus.New()
+		logger.SetFormatter(logrus.StandardLogger().Formatter)
+	}
+
 	return &SchedulerServer{
 		Address:   address,
 		Scheduler: scheduler,
+		logger:    logger,
 	}
 }
 
@@ -53,12 +59,8 @@ func (s *SchedulerServer) Start() error {
 		Handler: s.Router,
 	}
 
-	logger := logrus.New()
-	logger.SetFormatter(logrus.StandardLogger().Formatter)
-	s.logger = logger
-
 	go func() {
-		logger.Infof("[INFO] Starting scheduler server on %s", s.Address)
+		s.logger.Infof("[INFO] Starting scheduler server on %s", s.Address)
 		if err := s.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Listen and serve error: %v\n", err)
 		}

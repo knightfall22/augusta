@@ -3,7 +3,6 @@ package augusta
 import (
 	"context"
 	"io"
-	"log"
 	"sync"
 	"time"
 
@@ -245,7 +244,6 @@ func (p *Dispatcher) reapDeadWorkers(ctx context.Context) {
 func (p *Dispatcher) dispatch(ctx context.Context, tasks []*domain.Task) {
 	if len(tasks) > 0 {
 		workers := p.WorkerStore.GetAllSessions()
-		log.Println("Workers", workers)
 		if len(workers) > 0 {
 			//TODO: Might need to remove `SelectCandidateWorkers`
 			workers = p.Scheduler.SelectCandidateWorkers(tasks, workers)

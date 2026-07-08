@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
@@ -181,7 +180,6 @@ func (m *MongoStore) GetLeaseExpiredTasks(ctx context.Context) error {
 
 		next_run_at := internal.CalculateExponientialBackoff(task.Epsilon, task.CurrentRetries)
 
-		fmt.Println("LLLLLLLLL")
 		if _, err := m.tasks.UpdateByID(ctx, task.ID, bson.M{
 			"$set": bson.M{
 				"status":             "pending",
