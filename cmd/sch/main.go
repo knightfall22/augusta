@@ -16,7 +16,6 @@ func main() {
 		GRPCPort:          50051,
 	})
 
-	scheduler.Start()
 	schedulerServer := augusta.SchedulerServer{
 		Scheduler: scheduler,
 		Address:   "localhost:8080",
