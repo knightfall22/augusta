@@ -1,5 +1,7 @@
 ## Brief Summary of Augusta's Architecture
 
+![architecture overview](assets/overview.png)
+
 The system follows a relatively decoupled architecture. Breaking down its core modules into three layers; control plane, communication layer, and data layer.
 
 ### Layers
