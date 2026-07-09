@@ -8,6 +8,8 @@ Highlevel overview:
 - Leader scheduler allocates tasks on available workers using a scheduling alogrithm(eg. roundrobin)
 - Worker runs a task and reports the result to the leader
 
+View architecture [here](Architecture.md)
+
 ## Features
 
 - [x] Guaranteed exactly once delivery
