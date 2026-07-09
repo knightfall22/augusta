@@ -8,7 +8,7 @@ The system follows a relatively decoupled architecture. Breaking down its core m
 
 The control plane can be described as a cluster of scheduler nodes responsible for accepting and orchestrating tasks. It uses these sub-modules to facilitate this, `Dispatcher`, `Elector`, `StorageEngine`, `LeaseStore`, and a REST API. The control plane ingests tasks through its API and store them in the StorageEngine, the Dispatcher periodically polls the StorageEngine for ready tasks, then passes it along to a selected worker(using a scheduling algorithm).
 
-![lease based leader election](assets/leader-election.png)
+![lease based leader election](assets/lease-election.png)
 
 The control plane allows all scheduler nodes to accept incoming tasks on their api. But allows only one node(the leader) to schedule tasks and poll the StorageEngine. A leader is determined using [lease based leader election.](https://builder.aws.com/content/3Ev0vH0hfkcUizISUWYTvHibtcp/leader-election-in-distributed-systems)
 
