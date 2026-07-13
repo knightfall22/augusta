@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
-
 	"log"
+	"net/http"
 
 	"github.com/knightfall22/augusta/internal/domain"
 	"github.com/knightfall22/augusta/utils"
@@ -27,7 +26,9 @@ func (s *SchedulerServer) initRouter() error {
 	s.Router = http.NewServeMux()
 
 	s.Router.HandleFunc("POST /tasks", s.AddTask)
+	s.Router.HandleFunc("GET /tasks", s.GetTasks)
 	s.Router.HandleFunc("GET /tasks/{id}", s.GetTask)
+	s.Router.HandleFunc("GET /tasks/{id}/stats", s.GetTaskStats)
 	s.Router.HandleFunc("DELETE /tasks/{id}", s.DeleteTask)
 	s.Router.HandleFunc("DELETE /tasks/{id}/disable", s.DisableTask)
 	s.Router.HandleFunc("PATCH /tasks/{id}/enable", s.EnableTask)
@@ -68,6 +69,38 @@ func (s *SchedulerServer) Start() error {
 	}()
 
 	return nil
+}
+
+func (s *SchedulerServer) GetTasks(w http.ResponseWriter, r *http.Request) {
+	logger := s.logger.WithContext(r.Context()).WithField("method", "GetTasks")
+
+	w.Header().Set("Content-Type", "application/json")
+
+	status := r.URL.Query().Get("status")
+	limit, offset := utils.ParsePagination(r)
+
+	tasks, err := s.Scheduler.GetAllTasks(r.Context(), status, limit, offset)
+	if err != nil {
+		logger.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		response := domain.APIResponse{
+			Status:  "error",
+			Error:   true,
+			Message: "error getting tasks",
+			Data:    nil,
+		}
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	response := domain.APIResponse{
+		Status:  "ok",
+		Error:   false,
+		Message: "Tasks fetched successfully",
+		Data:    tasks,
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (s *SchedulerServer) AddTask(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +202,39 @@ func (s *SchedulerServer) GetTask(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func (s *SchedulerServer) GetTaskStats(w http.ResponseWriter, r *http.Request) {
+	logger := s.logger.WithContext(r.Context()).WithField("method", "GetTaskStats")
+	taskID := r.PathValue("id")
+
+	w.Header().Set("Content-Type", "application/json")
+
+	status := r.URL.Query().Get("status")
+	limit, offset := utils.ParsePagination(r)
+
+	stats, err := s.Scheduler.GetTaskStatsList(r.Context(), taskID, status, limit, offset)
+	if err != nil {
+		logger.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		response := domain.APIResponse{
+			Status:  "error",
+			Error:   true,
+			Message: "error getting task stats",
+			Data:    nil,
+		}
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	response := domain.APIResponse{
+		Status:  "ok",
+		Error:   false,
+		Message: "Task stats fetched successfully",
+		Data:    stats,
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
 func (s *SchedulerServer) DisableTask(w http.ResponseWriter, r *http.Request) {
 	logger := s.logger.WithContext(r.Context()).WithField("method", "DeleteTask")
 	taskID := r.PathValue("id")
@@ -216,7 +282,7 @@ func (s *SchedulerServer) EnableTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := s.Scheduler.EnableTask(r.Context(), taskID); err != nil {
 		logger.Error(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.renderJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -299,4 +365,15 @@ func (s *SchedulerServer) Stop() error {
 	}
 
 	return s.srv.Shutdown(context.Background())
+}
+
+func (s *SchedulerServer) renderJSONError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(domain.APIResponse{
+		Status:  "error",
+		Error:   true,
+		Message: message,
+		Data:    nil,
+	})
 }

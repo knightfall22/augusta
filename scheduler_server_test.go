@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/knightfall22/augusta/internal"
 	"github.com/knightfall22/augusta/internal/domain"
@@ -336,7 +337,7 @@ func TestDisableTask(t *testing.T) {
 				logger:    logger,
 			}
 
-			req := httptest.NewRequest(http.MethodDelete, "/tasks/disable/"+tt.taskID, nil)
+			req := httptest.NewRequest(http.MethodDelete, "/tasks/"+tt.taskID+"/disable", nil)
 			req.SetPathValue("id", tt.taskID)
 
 			rec := httptest.NewRecorder()
@@ -363,6 +364,85 @@ func TestDisableTask(t *testing.T) {
 				fetchedTask, _ := store.GetTask(context.Background(), tt.taskID)
 				if fetchedTask.Disabled != true {
 					t.Errorf("Expected task to be disabled, but it was still found in storage")
+				}
+			}
+		})
+	}
+}
+func TestEnableTask(t *testing.T) {
+	store := setup(t)
+	defer store.Flush(context.Background())
+
+	validTask := &domain.Task{
+		ID:       "123e4567-e89b-12d3-a456-426614174000",
+		Name:     "db-backup",
+		Schedule: "PT10S",
+	}
+
+	tests := []struct {
+		name           string
+		taskID         string
+		expectedStatus int
+		expectedMsg    string
+	}{
+		{
+			name:           "Success - Task Enabled",
+			taskID:         "123e4567-e89b-12d3-a456-426614174000",
+			expectedStatus: http.StatusOK,
+			expectedMsg:    "Task enabled successfully",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_ = store.AddTask(context.Background(), validTask)
+
+			logger := logrus.New()
+			logger.SetOutput(io.Discard)
+
+			sched := &Scheduler{
+				StorageEngine: store,
+				Logger:        logrus.NewEntry(logger),
+			}
+
+			server := &SchedulerServer{
+				Scheduler: sched,
+				logger:    logger,
+			}
+
+			req := httptest.NewRequest(http.MethodPatch, "/tasks/"+tt.taskID+"/enable", nil)
+			req.SetPathValue("id", tt.taskID)
+
+			rec := httptest.NewRecorder()
+			server.EnableTask(rec, req)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("Expected status code %d, but got %d", tt.expectedStatus, res.StatusCode)
+			}
+
+			if tt.expectedStatus == http.StatusOK {
+				var resp domain.APIResponse
+				if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+					t.Fatalf("Failed to decode success response body: %v", err)
+				}
+
+				if !strings.Contains(resp.Message, tt.expectedMsg) {
+					t.Errorf("Expected message to contain %q, but got %q", tt.expectedMsg, resp.Message)
+				}
+
+				//check if it was actually disabled
+				fetchedTask, _ := store.GetTask(context.Background(), tt.taskID)
+				if fetchedTask.Disabled != false {
+					t.Errorf("Expected task to be enabled")
+				}
+
+				t.Log("Next run at: ", fetchedTask.NextRunAt)
+
+				if !time.Now().Before(fetchedTask.NextRunAt) {
+					t.Errorf("Expected task next run to be in the future")
 				}
 			}
 		})

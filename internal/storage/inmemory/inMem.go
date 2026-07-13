@@ -154,6 +154,13 @@ func (i *InMemStorage) ProcessBatchTaskResult(ctx context.Context, results []*pb
 	return nil
 }
 
+func (i *InMemStorage) CountTaskStats(ctx context.Context, taskID string) (int64, error) {
+	i.Lock()
+	defer i.Unlock()
+
+	return 0, nil
+}
+
 func (i *InMemStorage) CheckConnection(ctx context.Context) error {
 	return nil
 }
@@ -165,4 +172,49 @@ func (i *InMemStorage) Flush(ctx context.Context) error {
 	i.tasks = make(map[string]*domain.Task)
 	i.lease = nil
 	return nil
+}
+
+func (i *InMemStorage) GetAllTasks(ctx context.Context, status string, limit int, offset int) (*domain.PaginatedList[*domain.TaskListResponse], error) {
+	i.Lock()
+	defer i.Unlock()
+
+	var all []*domain.TaskListResponse
+	for _, task := range i.tasks {
+		if status != "" && string(task.Status) != status {
+			continue
+		}
+		all = append(all, &domain.TaskListResponse{
+			ID:        task.ID,
+			Name:      task.Name,
+			TaskType:  task.TaskType,
+			RunsCount: 0,
+			Disabled:  task.Disabled,
+		})
+	}
+	
+	total := int64(len(all))
+	if offset > len(all) {
+		return &domain.PaginatedList[*domain.TaskListResponse]{Data: []*domain.TaskListResponse{}, TotalCount: total, HasNextPage: false}, nil
+	}
+	end := offset + limit
+	if end > len(all) {
+		end = len(all)
+	}
+	
+	return &domain.PaginatedList[*domain.TaskListResponse]{
+		Data:        all[offset:end],
+		TotalCount:  total,
+		HasNextPage: end < len(all),
+	}, nil
+}
+
+func (i *InMemStorage) GetTaskStatsList(ctx context.Context, taskID string, status string, limit int, offset int) (*domain.PaginatedList[*domain.TaskStat], error) {
+	i.Lock()
+	defer i.Unlock()
+
+	return &domain.PaginatedList[*domain.TaskStat]{
+		Data:        []*domain.TaskStat{},
+		TotalCount:  0,
+		HasNextPage: false,
+	}, nil
 }

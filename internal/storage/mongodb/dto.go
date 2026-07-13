@@ -90,3 +90,32 @@ func (l *leaseModel) fromDomain(lease *domain.Lease) {
 	l.LastAquired = lease.LastAquired
 	l.ExpiresAt = lease.ExpiresAt
 }
+
+type taskStats struct {
+	ID            string        `bson:"_id"`
+	TaskID        string        `bson:"task_id"`
+	Status        domain.Status `bson:"status"`
+	WorkerID      string        `bson:"worker_id"`
+	OutputMessage string        `bson:"output_message"`
+	LastRunAt     time.Time     `bson:"last_run_at"`
+}
+
+func (t *taskStats) toDomain() *domain.TaskStat {
+	return &domain.TaskStat{
+		ID:            t.ID,
+		TaskID:        t.TaskID,
+		Status:        t.Status,
+		WorkerID:      t.WorkerID,
+		OutputMessage: t.OutputMessage,
+		LastRunAt:     t.LastRunAt,
+	}
+}
+
+func (t *taskStats) fromDomain(taskStat *domain.TaskStat) {
+	t.ID = taskStat.ID
+	t.TaskID = taskStat.TaskID
+	t.Status = taskStat.Status
+	t.WorkerID = taskStat.WorkerID
+	t.OutputMessage = taskStat.OutputMessage
+	t.LastRunAt = taskStat.LastRunAt
+}

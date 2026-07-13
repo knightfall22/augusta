@@ -2,7 +2,6 @@ package augusta
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -24,6 +23,7 @@ type WorkerSessionStore struct {
 	// TODO: find a way to prevent tasks to be scheduled on workers that are on notice
 	notice         map[string]struct{}
 	aggregiousTime time.Duration
+	noticeTime     time.Duration
 	sync.RWMutex
 }
 
@@ -31,10 +31,13 @@ func NewWorkerSessionStore(aggregiousTime time.Duration) *WorkerSessionStore {
 	if aggregiousTime == 0 {
 		aggregiousTime = time.Duration(60 * time.Second)
 	}
+
+	noticeTime := aggregiousTime / 2
 	return &WorkerSessionStore{
 		Workers:        make(map[string]*WorkerSession),
 		aggregiousTime: aggregiousTime,
 		notice:         make(map[string]struct{}),
+		noticeTime:     noticeTime,
 	}
 }
 
@@ -53,7 +56,6 @@ func (w *WorkerSessionStore) SetWorkerSession(workerID string, session *WorkerSe
 	defer w.Unlock()
 	if _, ok := w.Workers[workerID]; !ok {
 		w.Workers[workerID] = session
-		log.Printf("Worker session created: %v", len(w.Workers))
 		return false, nil
 	}
 
@@ -82,8 +84,10 @@ func (w *WorkerSessionStore) DiscardFaultyWorkers() error {
 				delete(w.Workers, k)
 				delete(w.notice, k)
 				continue
+			} else if time.Now().UTC().Sub(v.LastHeartbeat) > w.noticeTime {
+				w.notice[k] = struct{}{}
 			}
-			w.notice[k] = struct{}{}
+
 		}
 	}
 

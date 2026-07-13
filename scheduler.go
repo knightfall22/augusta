@@ -231,6 +231,7 @@ func (s *Scheduler) Start() error {
 		if err := s.grpcServer.Serve(s.listener); err != nil {
 			select {
 			case <-s.ctx.Done():
+				s.grpcServer.Stop()
 				s.Logger.Info("Context Cancelled Stopping gRPC server")
 				return
 			default:
@@ -365,4 +366,12 @@ func (s *Scheduler) DisableTask(ctx context.Context, taskID string) error {
 
 func (s *Scheduler) EnableTask(ctx context.Context, taskID string) error {
 	return s.StorageEngine.EnableTask(ctx, taskID)
+}
+
+func (s *Scheduler) GetAllTasks(ctx context.Context, status string, limit int, offset int) (*domain.PaginatedList[*domain.TaskListResponse], error) {
+	return s.StorageEngine.GetAllTasks(ctx, status, limit, offset)
+}
+
+func (s *Scheduler) GetTaskStatsList(ctx context.Context, taskID string, status string, limit int, offset int) (*domain.PaginatedList[*domain.TaskStat], error) {
+	return s.StorageEngine.GetTaskStatsList(ctx, taskID, status, limit, offset)
 }

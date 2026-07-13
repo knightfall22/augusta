@@ -137,7 +137,7 @@ func TestTaskReoccurrence(t *testing.T) {
 	iterations := 3
 	var previousNextRun time.Time
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		timeout := 5 * time.Second
 		if i == 0 {
 			timeout = 25 * time.Second
@@ -167,6 +167,17 @@ func TestTaskReoccurrence(t *testing.T) {
 		}
 	}
 
+	sleepMs(500)
+
+	for _, tsk := range tasks {
+		count, err := h.scheduler[0].StorageEngine.CountTaskStats(context.Background(), tsk.ID)
+		if err != nil {
+			t.Fatalf("Failed to count task stats: %v", err)
+		}
+		if count != int64(iterations) {
+			t.Fatalf("Expected task stats count to be %d, got %d", iterations, count)
+		}
+	}
 	mockProcessor.Close()
 }
 

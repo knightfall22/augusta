@@ -119,7 +119,7 @@ func NewDispatcher(opts DispatcherOption) *Dispatcher {
 	}
 
 	if opts.FaultyWorkerTimeout == 0 {
-		opts.FaultyWorkerTimeout = 10
+		opts.FaultyWorkerTimeout = 30
 	}
 
 	return &Dispatcher{
@@ -164,11 +164,11 @@ func (p *Dispatcher) Run(ctx context.Context) {
 // appropriate worker's Go channel for network delivery.
 func (p *Dispatcher) run(ctx context.Context) {
 	logger := p.logger.WithContext(ctx).WithField("method", "run")
-
+	ticker := time.NewTicker(time.Duration(p.timeout) * time.Second)
 	p.wg.Go(func() {
 		for {
 			select {
-			case <-time.After(time.Duration(p.timeout) * time.Second):
+			case <-ticker.C:
 				tasks, err := p.Store.GetPendingTasks(ctx)
 				if err != nil {
 					logger.Error(err)
@@ -244,13 +244,16 @@ func (p *Dispatcher) reapDeadWorkers(ctx context.Context) {
 func (p *Dispatcher) dispatch(ctx context.Context, tasks []*domain.Task) {
 	if len(tasks) > 0 {
 		workers := p.WorkerStore.GetAllSessions()
+
+		p.logger.Infof("dispatching %d tasks to %d workers", len(tasks), len(workers))
+
 		if len(workers) > 0 {
 			//TODO: Might need to remove `SelectCandidateWorkers`
 			workers = p.Scheduler.SelectCandidateWorkers(tasks, workers)
 			scores := p.Scheduler.Score(tasks, workers)
 			worker := p.Scheduler.Pick(scores, workers)
 
-			p.logger.Debugf("worker selected: %s", worker.WorkerID)
+			p.logger.Infof("worker selected: %s", worker.WorkerID)
 
 			worker.taskChannel <- tasks
 		}

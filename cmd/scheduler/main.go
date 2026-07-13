@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/knightfall22/augusta"
 	mongoStorage "github.com/knightfall22/augusta/internal/storage/mongodb"
@@ -19,11 +20,12 @@ func main() {
 	}
 
 	scheduler := augusta.NewScheduler(augusta.SchedulerOptions{
-		GRPCPort:      50051,
-		Logger:        logrus.New(),
-		StorageEngine: store,
-		LeaseStorage:  store,
-		LeaseDuration: 5,
+		GRPCPort:          50051,
+		Logger:            logrus.New(),
+		StorageEngine:     store,
+		LeaseStorage:      store,
+		LeaseDuration:     5,
+		DispatcherTimeout: 5,
 	})
 
 	schedulerServer := augusta.NewSchedulerServer("127.0.0.1:8080", scheduler, nil)
@@ -41,4 +43,5 @@ func main() {
 	<-quit
 	schedulerServer.Stop()
 
+	time.Sleep(5 * time.Second)
 }

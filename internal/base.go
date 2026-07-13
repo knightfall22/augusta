@@ -50,6 +50,11 @@ type StorageEngine interface {
 	ProcessTaskResult(ctx context.Context, result *pb.TaskResult) error
 	ProcessBatchTaskResult(ctx context.Context, results []*pb.TaskResult) error
 
+	CountTaskStats(ctx context.Context, taskID string) (int64, error)
+
+	GetAllTasks(ctx context.Context, status string, limit int, offset int) (*domain.PaginatedList[*domain.TaskListResponse], error)
+	GetTaskStatsList(ctx context.Context, taskID string, status string, limit int, offset int) (*domain.PaginatedList[*domain.TaskStat], error)
+
 	//Used only for testing
 	GetTaskByName(ctx context.Context, taskName string) (*domain.Task, error)
 	Flush(ctx context.Context) error

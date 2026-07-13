@@ -155,3 +155,32 @@ func DeserializeFromProtobuf(task *pb.Task) *Task {
 		Reoccurrence:   int(task.Reoccurrence),
 	}
 }
+
+type TaskStat struct {
+	//ID is the id of the session
+	ID string
+
+	//ID is the id of the task that was ran
+	TaskID string
+
+	//Status is the status of the task run session
+	Status Status
+
+	//OutputMessage is the output message of the task run session
+	OutputMessage string
+
+	//LastRunAt is the time at which the task run session was completed
+	LastRunAt time.Time
+
+	//Id of the worker that ran the task
+	WorkerID string
+}
+
+type TaskListResponse struct {
+	ID        string `json:"id" bson:"id"`
+	Name      string `json:"name" bson:"name"`
+	TaskType  string `json:"task_type" bson:"task_type"`
+	Status    Status `json:"status" bson:"status"`
+	RunsCount int64  `json:"runs_count" bson:"runs_count"`
+	Disabled  bool   `json:"disabled" bson:"disabled"`
+}
